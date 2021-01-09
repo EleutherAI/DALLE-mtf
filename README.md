@@ -90,7 +90,7 @@ jsonl structure:
     ...
 ```
 
-you can then use the `create_paired_dataset` function in `data/create_tfrecords.py` to encode the dataset into tfrecords for use in training.
+you can then use the `create_paired_dataset` function in `src/data/create_tfrecords.py` to encode the dataset into tfrecords for use in training.
 
 Once the dataset is created, copy it over to your bucket with gsutil:
 
