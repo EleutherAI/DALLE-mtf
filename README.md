@@ -6,6 +6,10 @@ If our this is similarly efficient to [GPT-Neo](https://github.com/EleutherAI/gp
 
 No pretrained models... Yet.
 
+vanilla tensorflow vae (`train_vae_tf.py`) also available.
+
+Thanks to [Ben Wang](https://github.com/kingoflolz) for the tf vae implementation as well as getting the mtf version working, and [Aran Komatsuzaki](https://github.com/AranKomat) for help building the mtf VAE and input pipeline.
+
 # Setup
 
 ```bash
