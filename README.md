@@ -98,7 +98,7 @@ python train_dalle.py --tpu your_tpu_name --model dalle_example
 
 VAE:
 
-```json
+```
 {
   "model_type": "vae",
   "dataset": {
@@ -130,7 +130,7 @@ VAE:
 
 DALL-E:
 
-```json
+```
 {
   "model_type": "dalle",
   "dataset": {
