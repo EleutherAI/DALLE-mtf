@@ -1,0 +1,28 @@
+{
+  "model_type": "vae",
+  "dataset": {
+    "train_path": "gs://neo-datasets/CIFAR-10-images/train/**/*.jpg",
+    "eval_path": "gs://neo-datasets/CIFAR-10-images/test/**/*.jpg",
+    "image_size": 32
+  },
+  "train_batch_size": 32,
+  "eval_batch_size": 32,
+  "predict_batch_size": 32,
+  "steps_per_checkpoint": 1000,
+  "iterations": 500,
+  "train_steps": 100000,
+  "predict_steps": 0,
+  "eval_steps": 0,
+  "model_path": "gs://neo-models/vae_test2/",
+  "mesh_shape": "data:16,model:2",
+  "layout": "batch_dim:data",
+  "num_tokens": 512,
+  "dim": 512,
+  "hidden_dim": 64,
+  "n_channels": 3,
+  "bf_16": false,
+  "lr": 0.001,
+  "num_layers": 3,
+  "train_gumbel_hard": true,
+  "eval_gumbel_hard": true
+}

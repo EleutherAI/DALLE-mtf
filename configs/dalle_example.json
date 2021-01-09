@@ -1,0 +1,29 @@
+{
+  "model_type": "dalle",
+  "dataset": {
+    "train_path": "gs://neo-datasets/DALLE-tfrecords/*.tfrecords",
+    "eval_path": "gs://neo-datasets/DALLE-tfrecords/*.tfrecords",
+    "image_size": 32
+  },
+  "train_batch_size": 32,
+  "eval_batch_size": 32,
+  "predict_batch_size": 32,
+  "steps_per_checkpoint": 1000,
+  "iterations": 500,
+  "train_steps": 100000,
+  "predict_steps": 0,
+  "eval_steps": 0,
+  "n_channels": 3,
+  "bf_16": false,
+  "lr": 0.001,
+  "model_path": "gs://neo-models/dalle_test/",
+  "mesh_shape": "data:16,model:2",
+  "layout": "batch_dim:data",
+  "n_embd": 512,
+  "text_vocab_size": 50258,
+  "image_vocab_size": 512,
+  "text_seq_len": 256,
+  "n_layers": 6,
+  "n_heads": 4,
+  "vae_model": "vae_example"
+}
