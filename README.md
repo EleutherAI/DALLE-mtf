@@ -1,8 +1,8 @@
-# DALL-E in Mesh-Tensorflow [WIP]
+A# DALL-E in Mesh-Tensorflow [WIP]
 
 Open-AI's [DALL-E](https://openai.com/blog/dall-e/) in Mesh-Tensorflow.
 
-If our this is similarly efficient to [GPT-Neo](https://github.com/EleutherAI/gpt-neo/), this repo should be able to train models up to, and larger than, the size of Open-AI's DALL-E (12B params).
+If this is similarly efficient to [GPT-Neo](https://github.com/EleutherAI/gpt-neo/), this repo should be able to train models up to, and larger than, the size of Open-AI's DALL-E (12B params).
 
 No pretrained models... Yet.
 
@@ -62,7 +62,7 @@ Once the VAE is pretrained, you can move on to DALL-E.
 Currently we are training on a dummy dataset. A public, large-scale dataset for DALL-E is in the works. In the meantime, to generate some dummy data, run:
 
 ```bash
-python data/create_tfrecords.py
+python src/data/create_tfrecords.py
 ```
 
 This should download CIFAR-10, and generate some random captions to act as text inputs.
