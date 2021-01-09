@@ -48,7 +48,8 @@ tensorboard --logdir your_model_dir
 
 ## Dataset Creation [DALL-E]
 
-Once the VAE is pretrained, you can move on to DALL-E
+Once the VAE is pretrained, you can move on to DALL-E.
+
 Currently we are training on a dummy dataset. A public, large-scale dataset for DALL-E is in the works. In the meantime, to generate some dummy data, run:
 
 ```bash
@@ -57,7 +58,7 @@ python data/create_tfrecords.py
 
 This should download CIFAR-10, and generate some random captions to act as text inputs.
 
-If you want to create your own datasets, they should be formatted in a folder, with a jsonl file in the root folder containing caption data and paths to the respective images, as follows:
+Custom datasets should be formatted in a folder, with a jsonl file in the root folder containing caption data and paths to the respective images, as follows:
 
 ```
 Folder structure:
