@@ -75,10 +75,10 @@ Folder structure:
                 ...
             ...
 
-    Jsonl structure:
-        {"image_path": folder_1/img1, "caption": "some words"}
-        {"image_path": folder_2/img2, "caption": "more words"}
-        ...
+jsonl structure:
+    {"image_path": folder_1/img1, "caption": "some words"}
+    {"image_path": folder_2/img2, "caption": "more words"}
+    ...
 ```
 
 you can then use the `create_paired_dataset` function in `data/create_tfrecords.py` to encode the dataset into tfrecords for use in training.
