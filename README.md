@@ -24,7 +24,7 @@ Create your VM through a google shell (`https://ssh.cloud.google.com/`) with `ct
 
 ## VAE pretraining
 
-DALLE needs a pretrained VAE to compress images to tokens. To run the VAE pretraining, adjust the params in `configs/vae_example.json` to a glob file pointing to a dataset of jpgs, and adjust image size to the appropriate size.
+DALLE needs a pretrained VAE to compress images to tokens. To run the VAE pretraining, adjust the params in `configs/vae_example.json` to a glob path pointing to a dataset of jpgs, and adjust image size to the appropriate size.
 
 ```
   "dataset": {
