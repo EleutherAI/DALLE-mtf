@@ -1,6 +1,6 @@
 # DALL-E in Mesh-Tensorflow
 
-Open-AI's [DALL-E](https://openai.com/blog/dall-e/) in mesh-tensorflow.
+Open-AI's [DALL-E](https://openai.com/blog/dall-e/) in Mesh-Tensorflow.
 
 If our this is similarly efficient to [GPT-Neo](https://github.com/EleutherAI/gpt-neo/), this repo should be able to train models up to, and larger than, the size of Open-AI's DALL-E (12B params).
 
