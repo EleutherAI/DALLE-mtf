@@ -1,4 +1,4 @@
-# DALL-E in Mesh-Tensorflow
+# DALL-E in Mesh-Tensorflow [WIP]
 
 Open-AI's [DALL-E](https://openai.com/blog/dall-e/) in Mesh-Tensorflow.
 
