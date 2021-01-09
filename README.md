@@ -6,8 +6,6 @@ If our this is similarly efficient to [GPT-Neo](https://github.com/EleutherAI/gp
 
 No pretrained models... Yet.
 
-vanilla tensorflow vae (`train_vae_tf.py`) also available.
-
 Thanks to [Ben Wang](https://github.com/kingoflolz) for the tf vae implementation as well as getting the mtf version working, and [Aran Komatsuzaki](https://github.com/AranKomat) for help building the mtf VAE and input pipeline.
 
 # Setup
@@ -43,6 +41,13 @@ Once this is all set up, create your TPU, then run:
 ```bash
 python train_vae.py --tpu your_tpu_name --model vae_example
 ```
+
+A vanilla tensorflow vae is also available:
+
+```bash
+python train_vae_tf.py --tpu your_tpu_name --model vae_example
+```
+
 
 The training logs image tensors and loss values, to check progress, you can run:
 
