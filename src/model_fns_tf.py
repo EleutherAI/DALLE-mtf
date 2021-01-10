@@ -54,10 +54,6 @@ def vae_model_fn(features, labels, mode, params):
     with tf.control_dependencies(update_ops):
         train_op = optimizer.minimize(loss, global_step)
 
-    # scalar_summary("reconstruction_image", reconstruction)
-    # Log summaries to tensorboard
-    # scalar_summary("loss", loss)
-
     def host_call_fn(gs, loss, input, reconstruction):
         """Training host call. Creates scalar summaries for training metrics.
         This function is executed on the CPU and should not directly reference
@@ -96,8 +92,9 @@ def vae_model_fn(features, labels, mode, params):
     # [params['batch_size']].
     gs_t = tf.reshape(global_step, [1])
     loss_t = tf.reshape(loss, [1])
+    denormalize = lambda x: (x + 1) / 2
 
-    host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
+    host_call = (host_call_fn, [gs_t, loss_t, denormalize(features), reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
         mode=mode,

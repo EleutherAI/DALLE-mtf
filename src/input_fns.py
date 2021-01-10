@@ -17,7 +17,7 @@ def decode_img(img, size, channels=3):
     img = tf.image.decode_jpeg(img, channels=channels)
     # resize the image to the desired size
     img = crop_center_and_resize(img, size)
-    img = tf.cast(img, tf.float32) / 255.0 # normalize to between 0 and 1 (tf.image expects this)
+    img = (tf.cast(img, tf.float32) - 127.5) / 127.5
     return img
 
 
