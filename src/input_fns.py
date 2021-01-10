@@ -44,12 +44,12 @@ def read_labeled_tfrecord(params):
             "caption": tf.VarLenFeature(tf.int64),
         }
         example = tf.parse_single_example(example, features)
-        # label = tf.sparse.to_dense(example["caption"], example["caption"].dense_shape[0])
+        label = tf.sparse.to_dense(example["caption"], example["caption"].dense_shape[0])
         image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"],
                            return_labels=False)
-        # label = truncate_or_pad_label(label, params)
-        # label = tf.cast(label, tf.int32)
-        return image, image  # returns a dataset of (image, label) pairs
+        label = truncate_or_pad_label(label, params)
+        label = tf.cast(label, tf.int32)
+        return image, label  # returns a dataset of (image, label) pairs
 
     return read_fn
 
