@@ -59,7 +59,7 @@ def vae_model_fn(features, labels, mode, params):
     # Log summaries to tensorboard
     # scalar_summary("loss", loss)
 
-    def host_call_fn(gs, loss, lr):
+    def host_call_fn(gs, loss, input, reconstruction):
         """Training host call. Creates scalar summaries for training metrics.
         This function is executed on the CPU and should not directly reference
         any Tensors in the rest of the `model_fn`. To pass Tensors from the
@@ -85,7 +85,8 @@ def vae_model_fn(features, labels, mode, params):
         # once per loop.
         with tf2.summary.create_file_writer(params['model_path']).as_default():
             tf2.summary.scalar('loss', loss, step=gs)
-            tf2.summary.scalar('learning_rate', lr[0], step=gs)
+            tf2.summary.image('input_image', input, step=gs)
+            tf2.summary.image('reconstruction_image', reconstruction, step=gs)
 
             return tf.summary.all_v2_summary_ops()
 
@@ -96,9 +97,8 @@ def vae_model_fn(features, labels, mode, params):
     # [params['batch_size']].
     gs_t = tf.reshape(global_step, [1])
     loss_t = tf.reshape(loss, [1])
-    lr_t = tf.reshape(loss, [1])
 
-    host_call = (host_call_fn, [gs_t, loss_t, lr_t])
+    host_call = (host_call_fn, [gs_t, loss_t, features_dict["inputs"], reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
         mode=mode,
