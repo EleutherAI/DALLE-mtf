@@ -4,7 +4,7 @@ import tensorflow.compat.v1 as tf
 def crop_center_and_resize(img, size):
     s = tf.shape(img)
     w, h = s[0], s[1]
-    c = tf.minimum(w, h)
+    c = tf.maximum(w, h)
     wn, hn = h / c, w / c
     result = tf.image.crop_and_resize(tf.expand_dims(img, 0),
                                       [[(1 - wn) / 2, (1 - hn) / 2, wn, hn]],
@@ -12,12 +12,12 @@ def crop_center_and_resize(img, size):
     return tf.squeeze(result, 0)
 
 
-def decode_img(img, size, channels=3, return_labels=True):
+def decode_img(img, size, channels=3):
     # convert the compressed string to a 3D uint8 tensor
     img = tf.image.decode_jpeg(img, channels=channels)
     # resize the image to the desired size
     img = crop_center_and_resize(img, size)
-    img = (tf.cast(img, tf.float32) - 127.5) / 127.5
+    img = tf.cast(img, tf.float32) / 255.0 # normalize to between 0 and 1 (tf.image expects this)
     return img
 
 
@@ -45,8 +45,7 @@ def read_labeled_tfrecord(params):
         }
         example = tf.parse_single_example(example, features)
         label = tf.sparse.to_dense(example["caption"], example["caption"].dense_shape[0])
-        image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"],
-                           return_labels=False)
+        image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"])
         label = truncate_or_pad_label(label, params)
         label = tf.cast(label, tf.int32)
         return image, label  # returns a dataset of (image, label) pairs
@@ -60,8 +59,7 @@ def read_tfrecord(params):
             "image": tf.FixedLenFeature([], tf.string),
         }
         example = tf.parse_single_example(example, features)
-        image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"],
-                           return_labels=False)
+        image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"])
         return image, image  # returns image twice because they expect 2 returns
 
     return read_fn
