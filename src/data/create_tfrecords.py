@@ -97,7 +97,7 @@ def create_random_dataset(path_to_images, out_dir, max_images_per_folder=1000, w
         dump_jsonl([data], jsonl_path, append=True)
 
 
-def create_paired_dataset(path_to_jsonl, name, out_dir, examples_per_tfrecord=1000, tokenizer=None):
+def create_paired_dataset(path_to_jsonl, name, out_dir, examples_per_tfrecord=1000, tokenizer=None, reencode=False):
     """
     takes in a jsonl with relative paths to images & captions, and saves tfrecords files with num_examples
     examples to out_dir.
@@ -162,9 +162,13 @@ def create_paired_dataset(path_to_jsonl, name, out_dir, examples_per_tfrecord=10
                 writer = tf.io.TFRecordWriter(str(out_dir / f"{name}_{tfrecord_count}.tfrecords"))
                 tfrecord_count += 1
             image_path = path.parent / item["image_path"]
-            img = cv2.imread(str(image_path))
-            img = cv2.imencode('.jpg', img, (cv2.IMWRITE_JPEG_QUALITY, 94))[1].tostring()  # encodes image to string
-            caption = tokenizer.encode(item["caption"])
+            if reencode and image_path.endswith('.jpg') or image_path.endswith('.jpeg'):
+                img = cv2.imread(str(image_path))
+                img = cv2.imencode('.jpg', img, (cv2.IMWRITE_JPEG_QUALITY, 94))[1].tostring()  # encodes image to string
+            else:
+                img = open(image_path, "rb").read()
+
+            caption = tokenizer.encode(item["caption"][0])
             example = serialize_example(img, caption)
             writer.write(example)
             example_count += 1
