@@ -57,7 +57,8 @@ def vae_model_fn(features, labels, mode, params):
                     model.width_dim,
                     model.channels_dim
                 ]), name=key)
-    scalar_summary("input_image", mtf_features["inputs"])
+    denormalize = lambda x: (x + 1) / 2
+    scalar_summary("input_image", denormalize(mtf_features["inputs"]))
     if mode == tf.estimator.ModeKeys.PREDICT:
         raise NotImplementedError
 

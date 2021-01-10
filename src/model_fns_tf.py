@@ -23,12 +23,6 @@ def vae_model_fn(features, labels, mode, params):
         dimensions=H
     )
 
-    # mtf_features = {}
-    # for key, x in features_dict.items():
-    #     if x is not None:
-    #         x = tf.reshape(x, [batch_size, H, W, n_channels])  # NHWC
-    #         mtf_features[key] = x
-    # scalar_summary("input_image", features_dict["inputs"])
     if mode == tf.estimator.ModeKeys.PREDICT:
         raise NotImplementedError
 
