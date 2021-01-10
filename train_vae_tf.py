@@ -58,6 +58,7 @@ def main():
         tpu_config=tpu_config.TPUConfig(
             iterations_per_loop=params["iterations"],
             num_cores_per_replica=1,
+            experimental_host_call_every_n_steps=100,
             per_host_input_for_training=tpu_config.InputPipelineConfig.BROADCAST))
 
     estimator = tpu_estimator.TPUEstimator(
