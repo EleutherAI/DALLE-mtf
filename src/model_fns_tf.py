@@ -73,6 +73,7 @@ def vae_model_fn(features, labels, mode, params):
         """
         gs = gs[0]
         loss = tf.math.reduce_mean(loss)
+        denormalize = lambda x: (x + 1) / 2
 
         # Host call fns are executed FLAGS.iterations_per_loop times after one
         # TPU loop is finished, setting max_queue value to the same as number of
@@ -80,8 +81,8 @@ def vae_model_fn(features, labels, mode, params):
         # once per loop.
         with tf2.summary.create_file_writer(params['model_path']).as_default():
             tf2.summary.scalar('loss', loss, step=gs)
-            tf2.summary.image('input_image', input, step=gs)
-            tf2.summary.image('reconstruction_image', reconstruction, step=gs)
+            tf2.summary.image('input_image', denormalize(input), step=gs)
+            tf2.summary.image('reconstruction_image', denormalize(reconstruction), step=gs)
 
             return tf.summary.all_v2_summary_ops()
 
@@ -92,9 +93,8 @@ def vae_model_fn(features, labels, mode, params):
     # [params['batch_size']].
     gs_t = tf.reshape(global_step, [1])
     loss_t = tf.reshape(loss, [1])
-    denormalize = lambda x: (x + 1) / 2
 
-    host_call = (host_call_fn, [gs_t, loss_t, denormalize(features), reconstruction])
+    host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
         mode=mode,

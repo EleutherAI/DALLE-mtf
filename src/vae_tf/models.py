@@ -95,9 +95,8 @@ class DiscreteVAE:
 
         out = self.decoder(soft_one_hot)
 
-        denormalize = lambda x: (x + 1) / 2
         if not return_recon_loss:
-            return denormalize(out)
+            return out
 
         loss = mse_loss(tf.cast(img, out.dtype), out)
-        return loss, denormalize(out)
+        return loss, out
