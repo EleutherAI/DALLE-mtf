@@ -40,18 +40,25 @@ class DiscreteVAE:
                             else:
                                 # normal residual block
                                 out = self.conv2d(x, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_in")
-                                out = self.norm(out, name=f"bn_in")
+                                # out = self.norm(out, name=f"bn_in")
                                 out = self.activation(out, name=f"activ")
                                 out = self.conv2d(out, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_out")
-                                out = self.norm(out, name=f"bn_out")
+                                # out = self.norm(out, name=f"bn_out")
 
                                 x = x + out
 
-            with tf.variable_scope(f"proj"):
-                x = self.conv2d(x, self.num_tokens, (1, 1), (1, 1))
-            return x
+        with tf.variable_scope(f"codebook"):
+            self.n_hid = x.shape[-1]
+            embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
+
+            return tf.matmul(x, embedding)
 
     def decoder(self, x):
+        with tf.variable_scope(f"codebook", reuse=True):
+            embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
+
+            x = tf.matmul(x, embedding, transpose_b=True)
+
         with tf.variable_scope("decoder"):
             for block, (stack, channels) in enumerate(reversed(self.convblocks)):
                 with tf.variable_scope(f"block_{block}"):
@@ -63,10 +70,10 @@ class DiscreteVAE:
                             else:
                                 # normal residual block
                                 out = self.conv2d(x, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_in")
-                                out = self.norm(out, name=f"bn_in")
+                                # out = self.norm(out, name=f"bn_in")
                                 out = self.activation(out, name=f"activ")
                                 out = self.conv2d(out, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_out")
-                                out = self.norm(out, name=f"bn_out")
+                                # out = self.norm(out, name=f"bn_out")
 
                                 x = x + out
 
@@ -85,9 +92,8 @@ class DiscreteVAE:
             return logits  # return logits for getting hard image indices for DALL-E training
 
         soft_one_hot = gumbel_softmax(logits, -1, temperature=1., hard=hard_gumbel)
-        sampled = self.dense(soft_one_hot, self.hdim)
 
-        out = self.decoder(sampled)
+        out = self.decoder(soft_one_hot)
 
         denormalize = lambda x: (x + 1) / 2
         if not return_recon_loss:
