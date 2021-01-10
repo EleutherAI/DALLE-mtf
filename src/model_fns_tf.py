@@ -10,7 +10,6 @@ def vae_model_fn(features, labels, mode, params):
     # Build mtf_features & seq length dict for getting number of microbatches
     # We need to pack inputs into a dict to pass into serialize_training_step
 
-    features_dict = {"inputs": features, "labels": labels}
     H = W = params["dataset"]["image_size"]  # TODO: check equal
     mode_str = mode_to_str(mode)
     batch_size = params[f"{mode_str}_batch_size"]
@@ -43,7 +42,7 @@ def vae_model_fn(features, labels, mode, params):
 
     # TODO: add back in microbatching
     with tf.variable_scope("vae"):
-        loss, reconstruction = model.forward(features_dict, return_recon_loss=True, hard_gumbel=gumbel)
+        loss, reconstruction = model.forward(features, return_recon_loss=True, hard_gumbel=gumbel)
 
     optimizer = tf.train.AdamOptimizer(
         learning_rate=params["lr"]
@@ -98,7 +97,7 @@ def vae_model_fn(features, labels, mode, params):
     gs_t = tf.reshape(global_step, [1])
     loss_t = tf.reshape(loss, [1])
 
-    host_call = (host_call_fn, [gs_t, loss_t, features_dict["inputs"], reconstruction])
+    host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
         mode=mode,
