@@ -180,8 +180,5 @@ def create_paired_dataset(path_to_jsonl, name, out_dir, examples_per_tfrecord=10
 
 if __name__ == "__main__":
     # creates random test dataset with CIFAR 10
-    os.system("git clone https://github.com/YoongiKim/CIFAR-10-images")
-    create_random_dataset("CIFAR-10-images/train/*/*.jpg", "DALLE-dataset", max_images_per_folder=1000,
-                          words_per_caption=50)
-    create_paired_dataset("DALLE-dataset/captions_data.jsonl", "CIFAR", "DALLE-tfrecords", examples_per_tfrecord=1000,
+    create_paired_dataset("/home/data/coco/coco_captions.jsonl", "COCO", "DALLE-tfrecords", examples_per_tfrecord=1000,
                           tokenizer=None)
