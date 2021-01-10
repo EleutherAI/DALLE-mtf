@@ -1,19 +1,15 @@
 import tensorflow.compat.v1 as tf
-from math import sqrt
-from collections import defaultdict
-import math
-
-from .ops import pad, exists, get_variable_dtype
 from .layers import gumbel_softmax, mse_loss
 
 class DiscreteVAE:
     def __init__(self,
                  num_tokens,
                  dimensions,
+                 convblocks,
                  dim=512,
                  hidden_dim=64,
                  input_channels=3,
-                 bf_16=True):
+                 ):
         self.num_tokens = num_tokens
         self.dim = dim
         self.hdim = hidden_dim
@@ -27,28 +23,53 @@ class DiscreteVAE:
         self.conv2dtranspose = tf.layers.conv2d_transpose
         self.activation = tf.nn.relu
         self.dense = tf.layers.dense
-        self.bf_16 = bf_16
-        self.num_layers = 3  # hardcode this for now
+        self.norm = tf.layers.batch_normalization
+
+        # list of (stacked, channels) with implicit stride 2, conv between groups
+        self.convblocks = convblocks
 
     def encoder(self, x):
         with tf.variable_scope("encoder"):
-            x = self.conv2d(x, self.hdim, (4, 4), (2, 2), padding="SAME", name="conv1")
-            x = self.activation(x, name="activ1")
-            x = self.conv2d(x, self.hdim2, (4, 4), (2, 2), padding="SAME", name="conv2")
-            x = self.activation(x, name="activ2")
-            x = self.conv2d(x, self.hdim, (4, 4), (2, 2), padding="SAME", name="conv3")
-            x = self.activation(x, name="activ3")
-            x = self.conv2d(x, self.num_tokens, (1, 1), (1, 1))
+            for block, (stack, channels) in enumerate(self.convblocks):
+                with tf.variable_scope(f"block_{block}"):
+                    for i in range(stack):
+                        with tf.variable_scope(f"layer_{i}"):
+                            if i == 0:
+                                # downsample
+                                x = self.conv2d(x, channels, (4, 4), (2, 2), padding="SAME", name=f"conv_downsample")
+                            else:
+                                # normal residual block
+                                out = self.conv2d(x, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_in")
+                                out = self.norm(out, name=f"bn_in")
+                                out = self.activation(out, name=f"activ")
+                                out = self.conv2d(out, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_out")
+                                out = self.norm(out, name=f"bn_out")
+
+                                x = x + out
+
+            with tf.variable_scope(f"proj"):
+                x = self.conv2d(x, self.num_tokens, (1, 1), (1, 1))
             return x
 
     def decoder(self, x):
         with tf.variable_scope("decoder"):
-            x = self.conv2dtranspose(x, self.hdim2, (4, 4), (2, 2), padding="SAME", name="convtranspose1")
-            x = self.activation(x, name="activ1")
-            x = self.conv2dtranspose(x, self.hdim, (4, 4), (2, 2), padding="SAME", name="convtranspose2")
-            x = self.activation(x, name="activ2")
-            x = self.conv2dtranspose(x, self.hdim2, (4, 4), (2, 2), padding="SAME", name="convtranspose3")
-            x = self.activation(x, name="activ3")
+            for block, (stack, channels) in enumerate(reversed(self.convblocks)):
+                with tf.variable_scope(f"block_{block}"):
+                    for i in range(stack):
+                        with tf.variable_scope(f"layer_{i}"):
+                            if i == 0:
+                                # upsample
+                                x = self.conv2dtranspose(x, channels, (4, 4), (2, 2), padding="SAME", name=f"conv_upsample")
+                            else:
+                                # normal residual block
+                                out = self.conv2d(x, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_in")
+                                out = self.norm(out, name=f"bn_in")
+                                out = self.activation(out, name=f"activ")
+                                out = self.conv2d(out, channels, (3, 3), (1, 1), padding="SAME", name=f"conv_out")
+                                out = self.norm(out, name=f"bn_out")
+
+                                x = x + out
+
             x = self.conv2d(x, self.num_ch, (1, 1), (1, 1))
             return x
 

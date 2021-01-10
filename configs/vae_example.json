@@ -21,6 +21,7 @@
   "hidden_dim": 64,
   "n_channels": 3,
   "bf_16": false,
+  "convblocks": [[3, 64], [3, 128], [3, 256]],
   "lr": 0.001,
   "num_layers": 3,
   "train_gumbel_hard": true,

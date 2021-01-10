@@ -20,7 +20,7 @@ def vae_model_fn(features, labels, mode, params):
         dim=params["n_embd"],
         hidden_dim=params["hidden_dim"],
         input_channels=n_channels,
-        bf_16=params.get("bf_16", True),
+        convblocks=params.get("convblocks", [(3, 64), (3, 128), (3, 256)]),
         dimensions=H
     )
 
