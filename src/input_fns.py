@@ -54,6 +54,19 @@ def read_labeled_tfrecord(params):
     return read_fn
 
 
+def read_tfrecord(params):
+    def read_fn(example):
+        features = {
+            "image": tf.FixedLenFeature([], tf.string),
+        }
+        example = tf.parse_single_example(example, features)
+        image = decode_img(example["image"], params["dataset"]["image_size"], params["n_channels"],
+                           return_labels=False)
+        return image, image  # returns image twice because they expect 2 returns
+
+    return read_fn
+
+
 def vae_input_fn(params, eval=False):
     path = params["dataset"]["train_path"] if not eval else params["dataset"]["eval_path"]
 
@@ -66,7 +79,7 @@ def vae_input_fn(params, eval=False):
         dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
         dataset = dataset.apply(
             tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
-        parse_fn = read_labeled_tfrecord(params)
+        parse_fn = read_tfrecord(params)
         dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = configure_for_performance(dataset, params)
         return dataset.repeat()
