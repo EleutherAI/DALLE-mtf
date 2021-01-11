@@ -39,12 +39,6 @@ DALLE needs a pretrained VAE to compress images to tokens. To run the VAE pretra
 Once this is all set up, create your TPU, then run:
 
 ```bash
-python train_vae.py --tpu your_tpu_name --model vae_example
-```
-
-A vanilla tensorflow vae is also available:
-
-```bash
 python train_vae_tf.py --tpu your_tpu_name --model vae_example
 ```
 
