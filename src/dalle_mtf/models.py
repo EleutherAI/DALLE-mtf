@@ -160,8 +160,6 @@ class DALLE:
                            "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size),
                            "image_vocab_dim": mtf.Dimension("vocab_dim", image_vocab_size),
                            "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
-                           "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
-                           "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
                            "total_seq_dim": mtf.Dimension("total_seq_dim", self.total_seq_dim),
                            "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_dim),
                            "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_dim),
