@@ -389,14 +389,14 @@ class DALLE:
             return x
 
     def to_logits(self, x):
-        with tf.variable_scope("wte_final_linear"):
+        with tf.variable_scope("to_logits"):
             logits = self.linear(self.layer_norm(x), self.dimensions["final_vocab_dim"], name="linear_out")
             # Go to full precision for the logits
             return mtf.cast(logits, tf.float32)
 
     def forward(self, features, return_loss=True, return_logits=False):
         inputs = features["tokens"]
-        tokens = self.positional_embedding(self.embedding(inputs, "text_embd"), "text_pos_emb")
+        tokens = self.positional_embedding(self.embedding(inputs, "embedding"), "positional_embedding")
 
         mask = self.get_attn_mask(tokens.mesh, tokens.shape[1], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
