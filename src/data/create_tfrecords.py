@@ -162,7 +162,7 @@ def create_paired_dataset(path_to_jsonl, name, out_dir, examples_per_tfrecord=10
                 writer = tf.io.TFRecordWriter(str(out_dir / f"{name}_{tfrecord_count}.tfrecords"))
                 tfrecord_count += 1
             image_path = path.parent / item["image_path"]
-            if reencode and image_path.endswith('.jpg') or image_path.endswith('.jpeg'):
+            if reencode:
                 img = cv2.imread(str(image_path))
                 img = cv2.imencode('.jpg', img, (cv2.IMWRITE_JPEG_QUALITY, 94))[1].tostring()  # encodes image to string
             else:
