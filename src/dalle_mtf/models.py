@@ -141,7 +141,7 @@ class DiscreteVAE:
 class DALLE:
 
     def __init__(self, n_embd, text_vocab_size=12800, image_vocab_size=512, text_seq_len=256, image_seq_len=1024,
-                 n_layers=6, n_heads=8, batch_size=32, bf_16=True, attn_mask=None, vae=None, mode="train",
+                 n_layers=6, n_heads=8, batch_size=32, bf_16=True, attn_mask=None, mode="train",
                  is_incremental_inference=False, context=None, loss_fn=None, params=None, eos_token_id=None,
                  activation_fn=None):
 
@@ -150,10 +150,9 @@ class DALLE:
         self.image_vocab_size = image_vocab_size
         self.text_seq_len = text_seq_len
         self.image_seq_len = image_seq_len
-        self.total_seq_len = text_seq_len + image_seq_len
+        self.total_seq_dim = text_seq_len + image_seq_len
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.vae = vae
         self.attn_mask = attn_mask
         self.total_tokens = text_vocab_size + image_vocab_size + 1  # extra for EOS
         self.eos_token_id = self.total_tokens - 1 if eos_token_id is None else eos_token_id
@@ -163,8 +162,9 @@ class DALLE:
                            "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
                            "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
                            "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
-                           "embed_sequence_dim": mtf.Dimension("embed_sequence_dim", text_vocab_size),
-                           "memory_length_dim": mtf.Dimension("memory_length_dim", text_seq_len),
+                           "total_seq_dim": mtf.Dimension("total_seq_dim", self.total_seq_dim),
+                           "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_dim),
+                           "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_dim),
                            "heads_dim": mtf.Dimension("heads", n_heads),
                            "kv_dim": mtf.Dimension("kv_dim", n_embd // n_heads),
                            "batch_dim": mtf.Dimension("batch_dim", batch_size)}
@@ -187,10 +187,7 @@ class DALLE:
 
     def embedding(self, x, name):
         embd_dim = self.dimensions["embed_dim"]
-        if "text" in name:
-            vocab_dim = self.dimensions["text_vocab_dim"]
-        else:
-            vocab_dim = self.dimensions["image_vocab_dim"]
+        vocab_dim = self.dimensions["final_vocab_dim"]
         with tf.variable_scope(name):
             wte = mtf.get_variable(x.mesh, "wte",
                                    mtf.Shape([vocab_dim, embd_dim]),
@@ -206,19 +203,15 @@ class DALLE:
         return x
 
     def positional_embedding(self, x, name):
-        if "text" in name:
-            sequence_dim = self.dimensions["text_sequence_dim"]
-        else:
-            sequence_dim = self.dimensions["image_sequence_dim"]
         with tf.variable_scope(name):
             # Positional embedding
             wpe = mtf.get_variable(x.mesh, "wpe",
-                                   mtf.Shape([self.dimensions["embed_sequence_dim"], self.dimensions["embed_dim"]]),
+                                   mtf.Shape([self.dimensions["embed_seq_dim"], self.dimensions["embed_dim"]]),
                                    initializer=tf.random_normal_initializer(stddev=0.01),
                                    master_dtype=self.variable_dtype.master_dtype,
                                    slice_dtype=self.variable_dtype.slice_dtype,
                                    activation_dtype=self.variable_dtype.activation_dtype)
-            position_indices = mtf.range(x.mesh, sequence_dim, tf.int64) if not \
+            position_indices = mtf.range(x.mesh, self.dimensions["total_seq_dim"], tf.int64) if not \
                 self.is_incremental_inference else (self.context.position - 1)
             pos_emb = mtf.gather(wpe, position_indices, wpe.shape[0])
             embed_dropout = self.params.get("embed_dropout", 0)
@@ -293,14 +286,14 @@ class DALLE:
                             broadcasted_mask = mtf.broadcast(mask,
                                                              [batch_dim, self.dimensions["heads_dim"], mask.shape[-1]])
 
-                    k = mtf.replace_dimensions(k, k.shape[1], self.dimensions["memory_length_dim"])
-                    v = mtf.replace_dimensions(v, v.shape[1], self.dimensions["memory_length_dim"])
+                    k = mtf.replace_dimensions(k, k.shape[1], self.dimensions["memory_len_dim"])
+                    v = mtf.replace_dimensions(v, v.shape[1], self.dimensions["memory_len_dim"])
 
                     attn_dropout_rate = self.params.get("attention_dropout", 0) if self.mode == "train" else 0
 
                     a = mtf_transformer.attention.attention(
                         q, k, v,
-                        memory_length_dim=self.dimensions["memory_length_dim"],
+                        memory_length_dim=self.dimensions["memory_len_dim"],
                         key_dim=self.dimensions["kv_dim"],
                         value_dim=self.dimensions["kv_dim"],
                         bias=broadcasted_mask,
@@ -404,39 +397,19 @@ class DALLE:
             return mtf.cast(logits, tf.float32)
 
     def forward(self, features, return_loss=True, return_logits=False):
-        text = features["text_inputs"]
-        tokens = self.positional_embedding(self.embedding(text, "text_embd"), "text_pos_emb")
-        image = features.get("image_inputs", None)
-        if exists(image):
-            is_raw_image = len(image.shape) == 4
-            if is_raw_image:
-                assert exists(self.vae), 'VAE must be passed into constructor if you are to train directly on raw ' \
-                                         'images '
-                image_logits = mtf.stop_gradient(self.vae.forward(image, return_logits=True))
-                codebook_indices = mtf.argmax(image_logits, image_logits.shape[-1])
-                codebook_indices = mtf.stop_gradient(codebook_indices)
-                codebook_indices = mtf.reshape(codebook_indices,
-                                               mtf.Shape([codebook_indices.shape[0],
-                                                          self.dimensions["image_sequence_dim"]]))
-                image = codebook_indices
+        inputs = features["tokens"]
+        tokens = self.positional_embedding(self.embedding(inputs, "text_embd"), "text_pos_emb")
 
-            image_emb = self.positional_embedding(self.embedding(image, "image_embd"), "image_pos_emb")
-            tokens = mtf.concat([tokens, image_emb], concat_dim_name="sequence_dim")  # [batch, seq, n_embd]
-        self.dimensions["memory_length_dim"] = mtf.Dimension("memory_length_dim", tokens.shape[1].size)
-        mask = self.get_attn_mask(tokens.mesh, tokens.shape[1], self.dimensions["memory_length_dim"])
+        mask = self.get_attn_mask(tokens.mesh, tokens.shape[1], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
         if not return_loss:
             return logits
 
-        assert exists(image), 'when training, image must be supplied'
-
-        offset_image = image + self.text_vocab_size
-        labels = mtf.concat([text, offset_image], concat_dim_name="sequence_dim")
-        labels = pad(labels, [0, 1], dim_name="sequence_dim", pad_value=self.eos_token_id)
+        labels = pad(inputs, [0, 1], dim_name="total_seq_dim", pad_value=self.eos_token_id)
         indices = mtf.range(labels.mesh, mtf.Dimension("range", labels.shape[1].size - 1), tf.int32, name="labels_indices") + 1
         labels = mtf.gather(labels, indices, dim=labels.shape[1])
-        labels = mtf.rename_dimension(labels, "range", "sequence_dim")
+        labels = mtf.rename_dimension(labels, "range", "total_seq_dim")
         loss, loss_batch = self._loss(logits, labels)
         if return_logits and return_loss:
             # Cast back to checkpoint dtype
