@@ -29,13 +29,13 @@ def main():
     params = fetch_model_params(args.model)
     assert params["model_type"].lower() == "vae", f'model_type {params["model_type"]} not recognized'
 
-    # get current step
-    current_step = int(estimator_lib._load_global_step_from_checkpoint_dir(params["model_path"]))
-    logging.info(f"Current step: {current_step}")
-
     # Confirm deletion of checkpoint files if --new flag is set
     if args.new:
         maybe_remove_gs_or_filepath(params["model_path"])
+
+    # get current step
+    current_step = int(estimator_lib._load_global_step_from_checkpoint_dir(params["model_path"]))
+    logging.info(f"Current step: {current_step}")
 
     # Add to params:
     params["use_tpu"] = True if not args.tpu is None else False
@@ -51,8 +51,7 @@ def main():
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=params["model_path"],
-        save_checkpoints_steps=None,  # Disable the default saver
-        save_checkpoints_secs=None,  # Disable the default saver
+        save_checkpoints_steps=params["steps_per_checkpoint"],
         log_step_count_steps=params["iterations"],
         save_summary_steps=params["iterations"],
         tpu_config=tpu_config.TPUConfig(
@@ -74,7 +73,7 @@ def main():
     if has_predict_or_eval_steps:
         # Eval and train - stop and predict and/or eval every checkpoint
         while current_step < params["train_steps"]:
-            next_checkpoint = min(current_step + args.steps_per_checkpoint, params["train_steps"])
+            next_checkpoint = min(current_step + params["steps_per_checkpoint"], params["train_steps"])
             estimator.train(input_fn=partial(vae_input_fn, eval=False),
                             max_steps=next_checkpoint)
             current_step = next_checkpoint
@@ -84,7 +83,8 @@ def main():
             if params["eval_steps"] > 0:
                 logging.info(f"Starting eval")
                 estimator.evaluate(input_fn=partial(vae_input_fn, eval=True),
-                                   max_steps=next_checkpoint)
+                                   steps=params["eval_steps"])
+
         return
     else:
         # Else, just train

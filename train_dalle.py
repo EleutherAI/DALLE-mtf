@@ -31,13 +31,13 @@ def main():
     params["vae_params"] = fetch_model_params(params["vae_model"])
     assert params["model_type"].lower() == "dalle", f'model_type {params["model_type"]} not recognized'
 
-    # get current step
-    current_step = int(estimator_lib._load_global_step_from_checkpoint_dir(params["model_path"]))
-    logging.info(f"Current step: {current_step}")
-
     # Confirm deletion of checkpoint files if --new flag is set
     if args.new:
         maybe_remove_gs_or_filepath(params["model_path"])
+
+    # get current step
+    current_step = int(estimator_lib._load_global_step_from_checkpoint_dir(params["model_path"]))
+    logging.info(f"Current step: {current_step}")
 
     # Add to params:
     mesh_shape = mtf.convert_to_shape(params["mesh_shape"])
