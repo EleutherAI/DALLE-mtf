@@ -73,7 +73,7 @@ def vae_input_fn(params, eval=False):
         files = tf.io.gfile.glob(path)
         file_count = len(files)
         tf.logging.info(path)
-        tf.logging.info('FILE COUNT: ', file_count)
+        tf.logging.info(f'FILE COUNT: {file_count}')
         dataset = tf.data.Dataset.from_tensor_slices(files)
         if not eval:
             dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
@@ -87,7 +87,8 @@ def vae_input_fn(params, eval=False):
         files = tf.data.Dataset.list_files(path, shuffle=False)
         image_count = len(tf.io.gfile.glob(path))
         tf.logging.info(path)
-        tf.logging.info('IMAGE COUNT: ', image_count)
+        tf.logging.info(f'IMAGE COUNT: {image_count}')
+
         if not eval:
             files = files.shuffle(image_count, reshuffle_each_iteration=False)
         img_size = params["dataset"]["image_size"]
@@ -107,7 +108,7 @@ def dalle_input_fn(params, eval=False):
     files = tf.io.gfile.glob(path)
     file_count = len(files)
     tf.logging.info(path)
-    tf.logging.info('FILE COUNT: ', file_count)
+    tf.logging.info(f'FILE COUNT: {file_count}')
     dataset = tf.data.Dataset.from_tensor_slices(files)
 
     if not eval:

@@ -49,37 +49,34 @@ def vae_model_fn(features, labels, mode, params):
         train_op = optimizer.minimize(loss, global_step)
 
     def host_call_fn(gs, loss, input, reconstruction):
-        """Training host call. Creates scalar summaries for training metrics.
-        This function is executed on the CPU and should not directly reference
-        any Tensors in the rest of the `model_fn`. To pass Tensors from the
-        model to the `metric_fn`, provide as part of the `host_call`. See
-        https://www.tensorflow.org/api_docs/python/tf/contrib/tpu/TPUEstimatorSpec
-        for more information.
-        Arguments should match the list of `Tensor` objects passed as the second
-        element in the tuple passed to `host_call`.
-        Args:
-          gs: `Tensor with shape `[batch]` for the global_step
-          loss: `Tensor` with shape `[batch]` for the training loss.
-          lr: `Tensor` with shape `[batch]` for the learning_rate.
-          ce: `Tensor` with shape `[batch]` for the current_epoch.
-        Returns:
-          List of summary ops to run on the CPU host.
-        """
         gs = gs[0]
         loss = tf.math.reduce_mean(loss)
         denormalize = lambda x: (x + 1) / 2
 
-        # Host call fns are executed FLAGS.iterations_per_loop times after one
-        # TPU loop is finished, setting max_queue value to the same as number of
-        # iterations will make the summary writer only flush the data to storage
-        # once per loop.
         with tf2.summary.create_file_writer(params['model_path']).as_default():
-            prefix = "" if mode == tf.estimator.ModeKeys.TRAIN else "eval/"
-            tf2.summary.scalar(prefix + 'loss', loss, step=gs)
-            tf2.summary.image(prefix + 'input_image', denormalize(input), step=gs)
-            tf2.summary.image(prefix + 'reconstruction_image', denormalize(reconstruction), step=gs)
+            tf2.summary.scalar('loss', loss, step=gs)
+            tf2.summary.image('input_image', denormalize(input), step=gs)
+            tf2.summary.image('reconstruction_image', denormalize(reconstruction), step=gs)
 
             return tf.summary.all_v2_summary_ops()
+
+    def metric_fn(gs, loss, input, reconstruction):
+        gs = gs[0]
+        loss = tf.math.reduce_mean(loss)
+        denormalize = lambda x: (x + 1) / 2
+
+        with tf2.summary.create_file_writer(params['model_path']).as_default():
+            loss_op = tf.metrics.mean(loss)
+
+            with tf2.summary.record_if(loss_op[0] < tf.constant(1e-9)):
+                tf2.summary.image('eval/input_image', denormalize(input), step=gs)
+                tf2.summary.image('eval/reconstruction_image', denormalize(reconstruction), step=gs)
+
+            with tf.control_dependencies(tf.summary.all_v2_summary_ops()):
+                dummy_op = tf.no_op()
+
+            return {"loss": loss_op,
+                    "zzz_dummy": (tf.constant(0), dummy_op)}
 
     # To log the loss, current learning rate, and epoch for Tensorboard, the
     # summary op needs to be run on the host CPU via host_call. host_call
@@ -90,9 +87,11 @@ def vae_model_fn(features, labels, mode, params):
     loss_t = tf.reshape(loss, [1])
 
     host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
+    metric = (metric_fn, [gs_t, loss_t, features, reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
         mode,
         loss=loss,
-        host_call=host_call,
-        train_op=train_op)
+        host_call=host_call if mode == tf.estimator.ModeKeys.TRAIN else None,
+        train_op=train_op,
+        eval_metrics=metric)

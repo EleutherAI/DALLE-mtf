@@ -13,7 +13,7 @@
   "iterations": 500,
   "train_steps": 100000,
   "predict_steps": 0,
-  "eval_steps": 32,
+  "eval_steps": 16,
   "model_path": "gs://neo-models/vae_coco3/",
   "num_tokens": 512,
   "n_channels": 3,
