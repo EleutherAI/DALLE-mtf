@@ -74,9 +74,10 @@ def vae_model_fn(features, labels, mode, params):
         # iterations will make the summary writer only flush the data to storage
         # once per loop.
         with tf2.summary.create_file_writer(params['model_path']).as_default():
-            tf2.summary.scalar('loss', loss, step=gs)
-            tf2.summary.image('input_image', denormalize(input), step=gs)
-            tf2.summary.image('reconstruction_image', denormalize(reconstruction), step=gs)
+            prefix = "" if mode == tf.estimator.ModeKeys.TRAIN else "eval/"
+            tf2.summary.scalar(prefix + 'loss', loss, step=gs)
+            tf2.summary.image(prefix + 'input_image', denormalize(input), step=gs)
+            tf2.summary.image(prefix + 'reconstruction_image', denormalize(reconstruction), step=gs)
 
             return tf.summary.all_v2_summary_ops()
 
@@ -91,7 +92,7 @@ def vae_model_fn(features, labels, mode, params):
     host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
-        tf.estimator.ModeKeys.TRAIN,
+        mode,
         loss=loss,
         host_call=host_call,
         train_op=train_op)

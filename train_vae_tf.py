@@ -84,6 +84,7 @@ def main():
                 logging.info(f"Starting eval")
                 estimator.evaluate(input_fn=partial(vae_input_fn, eval=True),
                                    steps=params["eval_steps"])
+
         return
     else:
         # Else, just train
