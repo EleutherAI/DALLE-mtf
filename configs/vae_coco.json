@@ -2,7 +2,7 @@
   "model_type": "vae",
   "dataset": {
     "train_path": "gs://neo-datasets/coco_captions/*.tfrecords",
-    "eval_path": "gs://neo-datasets/coco_captions/*.tfrecords",
+    "eval_path": "gs://neo-datasets/coco_captions_val/*.tfrecords",
     "image_size": 256,
     "tfrecords": true
   },
@@ -13,14 +13,14 @@
   "iterations": 500,
   "train_steps": 100000,
   "predict_steps": 0,
-  "eval_steps": 0,
-  "model_path": "gs://neo-models/vae_coco/",
+  "eval_steps": 32,
+  "model_path": "gs://neo-models/vae_coco3/",
   "mesh_shape": "data:16,model:2",
   "layout": "batch_dim:data",
   "num_tokens": 512,
   "n_channels": 3,
   "convblocks": [[2, 64], [2, 128], [2, 256]],
-  "lr": 0.001,
+  "lr": 0.0001,
   "train_gumbel_hard": false,
   "eval_gumbel_hard": true
 }

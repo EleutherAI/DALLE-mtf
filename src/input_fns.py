@@ -74,19 +74,22 @@ def vae_input_fn(params, eval=False):
         tf.logging.info(path)
         tf.logging.info('FILE COUNT: ', file_count)
         dataset = tf.data.Dataset.from_tensor_slices(files)
-        dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
-        dataset = dataset.apply(
-            tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
+        if not eval:
+            dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
+            dataset = dataset.apply(
+                tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
         parse_fn = read_tfrecord(params)
         dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        dataset = configure_for_performance(dataset, params)
+        if not eval:
+            dataset = configure_for_performance(dataset, params)
         return dataset.repeat()
     else:
         files = tf.data.Dataset.list_files(path, shuffle=False)
         image_count = len(tf.io.gfile.glob(path))
         tf.logging.info(path)
         tf.logging.info('IMAGE COUNT: ', image_count)
-        files = files.shuffle(image_count, reshuffle_each_iteration=False)
+        if not eval:
+            files = files.shuffle(image_count, reshuffle_each_iteration=False)
         img_size = params["dataset"]["image_size"]
 
         def _process_path(file_path):
@@ -96,7 +99,8 @@ def vae_input_fn(params, eval=False):
             return img, img
 
         dataset = files.map(_process_path, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        dataset = configure_for_performance(dataset, params)
+        if not eval:
+            dataset = configure_for_performance(dataset, params)
         return dataset.repeat()
 
 def dalle_input_fn(params, eval=False):
@@ -106,9 +110,12 @@ def dalle_input_fn(params, eval=False):
     tf.logging.info(path)
     tf.logging.info('FILE COUNT: ', file_count)
     dataset = tf.data.Dataset.from_tensor_slices(files)
-    dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
-    dataset = dataset.apply(tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
+
+    if not eval:
+        dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
+        dataset = dataset.apply(tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
     parse_fn = read_labeled_tfrecord(params)
     dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    dataset = configure_for_performance(dataset, params)
+    if not eval:
+        dataset = configure_for_performance(dataset, params)
     return dataset.repeat()

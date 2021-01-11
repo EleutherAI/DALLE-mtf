@@ -91,7 +91,7 @@ def vae_model_fn(features, labels, mode, params):
     host_call = (host_call_fn, [gs_t, loss_t, features, reconstruction])
 
     return tpu_estimator.TPUEstimatorSpec(
-        mode=mode,
+        tf.estimator.ModeKeys.TRAIN,
         loss=loss,
-        train_op=train_op,
-        host_call=host_call)
+        host_call=host_call,
+        train_op=train_op)
