@@ -80,7 +80,7 @@ class DiscreteVAE:
             x = self.conv2d(x, self.num_ch, (1, 1), (1, 1))
             return x
 
-    def forward(self, features, return_recon_loss=False, return_logits=False, hard_gumbel=True):
+    def forward(self, features, return_recon_loss=False, return_logits=False, hard_gumbel=True, temperature=1.):
         if isinstance(features, dict):
             img = features["inputs"]
         else:
@@ -91,7 +91,7 @@ class DiscreteVAE:
         if return_logits:
             return logits  # return logits for getting hard image indices for DALL-E training
 
-        soft_one_hot = gumbel_softmax(logits, -1, temperature=1., hard=hard_gumbel)
+        soft_one_hot = gumbel_softmax(logits, -1, temperature=temperature, hard=hard_gumbel)
 
         out = self.decoder(soft_one_hot)
 

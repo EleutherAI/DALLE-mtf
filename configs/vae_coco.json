@@ -19,6 +19,9 @@
   "n_channels": 3,
   "convblocks": [[2, 64], [2, 128], [2, 256]],
   "lr": 0.0001,
+  "temp_start": 1,
+  "temp": 0.05,
+  "temp_anneal_steps": 25000,
   "train_gumbel_hard": false,
   "eval_gumbel_hard": true
 }
