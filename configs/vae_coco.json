@@ -6,9 +6,9 @@
     "image_size": 256,
     "tfrecords": true
   },
-  "train_batch_size": 64,
-  "eval_batch_size": 64,
-  "predict_batch_size": 64,
+  "train_batch_size": 128,
+  "eval_batch_size": 128,
+  "predict_batch_size": 128,
   "steps_per_checkpoint": 1000,
   "iterations": 500,
   "train_steps": 100000,
