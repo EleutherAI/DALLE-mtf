@@ -1,8 +1,8 @@
 import tensorflow.compat.v1 as tf
 from .layers import gumbel_softmax, mse_loss
 
-# hacked up recompute grad which handles variable scopes properly
-def recompute_grad(f):
+# hacked up recompute grad which handles variable scopes properly and to handle bf16
+def recompute_grad(f, bf16=False):
     @tf.custom_gradient
     def inner(*args, **kwargs):
         result = f(*args, **kwargs)
@@ -14,8 +14,13 @@ def recompute_grad(f):
                 if variables is not None:
                     t.watch(variables)
                 with tf.control_dependencies([dresult]):
-                    with tf.variable_scope(scope, reuse=True):
-                        result = f(*args, **kwargs)
+                    if bf16:
+                        with tf.tpu.bfloat16_scope():
+                            with tf.variable_scope(scope, reuse=True):
+                                result = f(*args, **kwargs)
+                    else:
+                        with tf.variable_scope(scope, reuse=True):
+                            result = f(*args, **kwargs)
             kw_vars = []
             if variables is not None:
                 kw_vars = list(variables)
@@ -35,6 +40,7 @@ class DiscreteVAE:
                  hidden_dim=64,
                  input_channels=3,
                  recompute_grad=False,
+                 use_bf16=False,
                  ):
         self.num_tokens = num_tokens
         self.dim = dim
@@ -54,8 +60,12 @@ class DiscreteVAE:
         # list of (stacked, channels) with implicit stride 2, conv between groups
         self.convblocks = convblocks
         self.recompute_grad = recompute_grad
+        self.bf16 = use_bf16
 
     def encoder(self, x):
+        if self.bf16:
+            x = tf.cast(x, tf.bfloat16)
+
         with tf.variable_scope("encoder"):
             for block, (stack, channels) in enumerate(self.convblocks):
                 with tf.variable_scope(f"block_{block}"):
@@ -75,7 +85,7 @@ class DiscreteVAE:
                                     # out = self.norm(out, name=f"bn_out")
                                     return out
 
-                                res_out = recompute_grad(encoder_block)(x) if self.recompute_grad else encoder_block(x)
+                                res_out = recompute_grad(encoder_block, self.bf16)(x) if self.recompute_grad else encoder_block(x)
 
                                 x = x + res_out
 
@@ -83,13 +93,22 @@ class DiscreteVAE:
             self.n_hid = x.shape[-1]
             embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
 
-            return tf.matmul(x, embedding)
+            if self.bf16:
+                x = tf.cast(x, tf.float32)
+
+            output = tf.matmul(x, embedding)
+
+            return output
+
 
     def decoder(self, x):
         with tf.variable_scope(f"codebook", reuse=True):
             embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
 
             x = tf.matmul(x, embedding, transpose_b=True)
+
+        if self.bf16:
+            x = tf.cast(x, tf.bfloat16)
 
         with tf.variable_scope("decoder"):
             for block, (stack, channels) in enumerate(reversed(self.convblocks)):
@@ -110,11 +129,15 @@ class DiscreteVAE:
                                     # out = self.norm(out, name=f"bn_out")
                                     return out
 
-                                res_out = recompute_grad(decoder_block)(x) if self.recompute_grad else decoder_block(x)
+                                res_out = recompute_grad(decoder_block, self.bf16)(x) if self.recompute_grad else decoder_block(x)
 
                                 x = x + res_out
 
             x = self.conv2d(x, self.num_ch, (1, 1), (1, 1))
+
+            if self.bf16:
+                x = tf.cast(x, tf.float32)
+
             return x
 
     def forward(self, features, return_recon_loss=False, return_logits=False, hard_gumbel=True, temperature=1.):
