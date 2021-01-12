@@ -75,7 +75,7 @@ def vae_model_fn(features, labels, mode, params):
             with tf.control_dependencies(tf.summary.all_v2_summary_ops()):
                 dummy_op = tf.no_op()
 
-            return {"loss": loss_op,
+            return {"_loss": loss_op,
                     "zzz_dummy": (tf.constant(0), dummy_op)}
 
     # To log the loss, current learning rate, and epoch for Tensorboard, the
