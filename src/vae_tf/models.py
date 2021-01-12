@@ -5,7 +5,7 @@ from .layers import gumbel_softmax, mse_loss
 def recompute_grad(f, bf16=False):
     @tf.custom_gradient
     def inner(*args, **kwargs):
-        result = f(*args, **kwargs)
+        result = tf.stop_gradient(f(*args, **kwargs))
         scope = tf.get_default_graph().get_name_scope()
 
         def grad(dresult, variables=None):
@@ -13,19 +13,28 @@ def recompute_grad(f, bf16=False):
                 t.watch(args)
                 if variables is not None:
                     t.watch(variables)
+                # we need to outsmart XLA here to force a control dependency
+                zero_with_control_dependency = tf.reduce_mean(dresult[0] * 1e-30)
+                new_args = []
+                for a in args:
+                    if a.dtype.is_floating:
+                        new_args.append(a + tf.cast(zero_with_control_dependency, a.dtype))
+                    else:
+                        new_args.append(a)
+
                 with tf.control_dependencies([dresult]):
                     if bf16:
                         with tf.tpu.bfloat16_scope():
                             with tf.variable_scope(scope, reuse=True):
-                                result = f(*args, **kwargs)
+                                result = f(*new_args, **kwargs)
                     else:
                         with tf.variable_scope(scope, reuse=True):
-                            result = f(*args, **kwargs)
+                            result = f(*new_args, **kwargs)
             kw_vars = []
             if variables is not None:
                 kw_vars = list(variables)
-            grads = t.gradient(result, list(args) + kw_vars, output_gradients=[dresult])
-            return grads[:len(args)], grads[len(args):]
+            grads = t.gradient(result, list(new_args) + kw_vars, output_gradients=[dresult])
+            return grads[:len(new_args)], grads[len(new_args):]
 
         return result, grad
     return inner
