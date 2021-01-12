@@ -20,6 +20,7 @@ def vae_model_fn(features, labels, mode, params):
         hidden_dim=params["hidden_dim"],
         input_channels=n_channels,
         convblocks=params.get("convblocks", [(3, 64), (3, 128), (3, 256)]),
+        recompute_grad=params.get("recompute_grad", False),
         dimensions=H
     )
 
