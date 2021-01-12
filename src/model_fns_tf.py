@@ -22,6 +22,7 @@ def vae_model_fn(features, labels, mode, params):
         convblocks=params.get("convblocks", [(3, 64), (3, 128), (3, 256)]),
         recompute_grad=params.get("recompute_grad", False),
         use_bf16=params.get("use_bf16", False),
+        stack_factor=params.get("stack_factor", 1),
         dimensions=H
     )
 

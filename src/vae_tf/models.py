@@ -1,5 +1,8 @@
+import math
+
 import tensorflow.compat.v1 as tf
 from .layers import gumbel_softmax, mse_loss
+
 
 # hacked up recompute grad which handles variable scopes properly and to handle bf16
 def recompute_grad(f, bf16=False):
@@ -50,6 +53,7 @@ class DiscreteVAE:
                  input_channels=3,
                  recompute_grad=False,
                  use_bf16=False,
+                 stack_factor=1,
                  ):
         self.num_tokens = num_tokens
         self.dim = dim
@@ -71,9 +75,15 @@ class DiscreteVAE:
         self.recompute_grad = recompute_grad
         self.bf16 = use_bf16
 
+        assert math.log2(stack_factor).is_integer() # maybe you don't actually need this?
+        self.stack_factor = stack_factor
+
     def encoder(self, x):
         if self.bf16:
             x = tf.cast(x, tf.bfloat16)
+
+        if self.stack_factor > 1:
+            x = tf.space_to_depth(x, self.stack_factor)
 
         with tf.variable_scope("encoder"):
             for block, (stack, channels) in enumerate(self.convblocks):
@@ -142,10 +152,13 @@ class DiscreteVAE:
 
                                 x = x + res_out
 
-            x = self.conv2d(x, self.num_ch, (1, 1), (1, 1))
+            x = self.conv2d(x, self.num_ch * self.stack_factor ** 2, (1, 1), (1, 1))
 
             if self.bf16:
                 x = tf.cast(x, tf.float32)
+
+            if self.stack_factor > 1:
+                x = tf.depth_to_space(x, self.stack_factor)
 
             return x
 
