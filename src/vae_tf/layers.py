@@ -11,8 +11,8 @@ def gumbel_softmax(logits, axis, temperature=1, hard=True):
                 minval=smol_val,
                 maxval=1.,
                 dtype=logits.dtype)))
-        logits += g * temperature
-        sample = tf.nn.softmax(logits, axis, name="gumbel_softmax_softmax")
+        logits += g
+        sample = tf.nn.softmax(logits/temperature, axis, name="gumbel_softmax_softmax")
 
         if hard:
             sample_hard = tf.cast(tf.one_hot(tf.argmax(sample, axis), sample.shape[axis], axis=axis), sample.dtype)
