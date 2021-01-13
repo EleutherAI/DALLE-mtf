@@ -225,3 +225,7 @@ def scalar_summary(name, x):
     a Tensor which is identical in value to x
   """
   return ScalarSummaryOperation(name, x)
+
+def get_image_seq_len(dalle_params):
+    return (dalle_params["vae_params"]['dataset']['image_size'] // (2 ** len(dalle_params["vae_params"]['convblocks']))) ** 2 // (
+                dalle_params.get("vae_params").get("stack_factor", 1) ** 2)

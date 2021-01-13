@@ -6,7 +6,7 @@ from tensorflow_estimator.python.estimator import estimator as estimator_lib
 import argparse
 from src.utils import *
 from src.model_fns import dalle_model_fn
-from src.input_fns import dalle_input_fn
+from src.input_fns import dalle_input_fn, pred_input, pred_output
 from src.data import get_tokenizer
 
 def parse_args():
@@ -18,6 +18,8 @@ def parse_args():
     parser.add_argument("--model", type=str, default=None, help="JSON file that contains model parameters.")
     parser.add_argument("--new", action="store_true", help="If set, deletes previous checkpoint, if it exists, and "
                                                            "starts a new training run")
+    parser.add_argument('--predict', action='store_true', help='run model in predict mode')
+    parser.add_argument('--prompt', type=str, default='a cat in a hat')
     args = parser.parse_args()
     assert args.model is not None, "Model must be set"
     return args
@@ -46,6 +48,8 @@ def main():
     params["gpu_ids"] = args.gpu_ids
     tokenizer = get_tokenizer(params["tokenizer"])
     assert len(tokenizer) == params["text_vocab_size"], f"tokenizer vocab size {len(tokenizer)} must equal model vocab size {params['text_vocab_size']}"
+    params['image_seq_len'] = get_image_seq_len(params)
+    params['total_seq_len'] = params['image_seq_len'] + params['text_seq_len']
     params["padding_id"] = tokenizer.encode(tokenizer.pad_token)[0]
     # Set up TPUs and Estimator
     if args.tpu == "colab":
@@ -76,6 +80,13 @@ def main():
         eval_batch_size=params["eval_batch_size"],
         predict_batch_size=params["predict_batch_size"],
         params=params)
+    if args.predict:
+        # Predict
+        pred_input_fn = partial(pred_input, params, tokenizer, args.prompt)
+        predictions = estimator.predict(input_fn=pred_input_fn)
+        logging.info("Predictions generated")
+        pred_output(predictions, 'test')
+        return
 
     has_predict_or_eval_steps = params["predict_steps"] > 0 or params["eval_steps"] > 0
     if has_predict_or_eval_steps:

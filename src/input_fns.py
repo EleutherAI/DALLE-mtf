@@ -38,6 +38,31 @@ def truncate_or_pad_label(label, params):
     return label
 
 
+def pred_input(params, tokenizer, prompt='a cat in a hat'):
+    tokens = tokenizer.encode(prompt).ids
+    if len(tokens) > params["total_seq_len"]:
+        tf.logging.info("The length of your input prompt is longer than the model's text context length - truncating "
+                        "input.")
+        tokens = tokens[len(tokens) - params["total_seq_len"]:]  # TODO: left or right truncate here?
+    if len(tokens) < params["total_seq_len"]:
+        tokens = tf.pad(tokens, [[0, params["total_seq_len"] - len(tokens)]], constant_values=params["padding_id"])
+    t = tf.broadcast_to(tokens, [params["batch_size"], params["total_seq_len"]])
+    dataset = tf.data.Dataset.from_tensors(t)
+
+    def _dummy_labels(x):
+        return x, x
+
+    dataset = dataset.map(_dummy_labels)
+    return dataset
+
+
+def pred_output(predictions, out_name='test'):
+    with tf.gfile.Open(f"{out_name}.txt", "w") as f:
+        for i, p in enumerate(predictions):
+            p = p["outputs"]
+            f.write(str(p["outputs"]))
+
+
 def read_labeled_tfrecord(params):
     def read_fn(example):
         features = {
@@ -103,6 +128,7 @@ def vae_input_fn(params, eval=False):
         dataset = configure_for_performance(dataset, params, eval)
         return dataset.repeat()
 
+
 def dalle_input_fn(params, eval=False):
     path = params["dataset"]["train_path"] if not eval else params["dataset"]["eval_path"]
     files = tf.io.gfile.glob(path)
@@ -113,7 +139,8 @@ def dalle_input_fn(params, eval=False):
 
     if not eval:
         dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
-    dataset = dataset.apply(tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
+    dataset = dataset.apply(
+        tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
     parse_fn = read_labeled_tfrecord(params)
     dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = configure_for_performance(dataset, params, eval)
