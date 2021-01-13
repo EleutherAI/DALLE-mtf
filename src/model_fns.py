@@ -47,6 +47,7 @@ def load_vae_model(params, mode_str):
         hidden_dim=vae_params["hidden_dim"],
         input_channels=vae_params.get("input_channels", 3),
         convblocks=params.get("vae_params").get("convblocks", [(3, 64), (3, 128), (3, 256)]),
+        stack_factor=params.get("vae_params").get("stack_factor", 1),
         dimensions=D
     )
     return vae_model, vae_checkpoint_path
@@ -65,7 +66,7 @@ def dalle_model_fn(features, labels, mode, params):
     initialize_vae_weights(vae_checkpoint_path)
 
     H = W = params["dataset"]["image_size"]
-    image_seq_len = (vae.H // (2 ** len(vae.convblocks))) ** 2  # TODO: check this is correct
+    image_seq_len = (vae.H // (2 ** len(vae.convblocks))) ** 2 // (vae.stack_factor ** 2) # TODO: check this is correct
     batch_size = params[f"{mode_str}_batch_size"]
     n_channels = params.get("input_channels", 3)
 
