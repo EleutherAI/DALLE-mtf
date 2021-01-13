@@ -4,8 +4,9 @@ from tensorflow.python.tpu import tpu_estimator
 import mesh_tensorflow.transformer as mtf_transformer
 from .optimizers import get_optimizer
 from .utils import mode_to_str, get_graph_info, create_host_call, simd_mesh_setup, scalar_summary
-from .dalle_mtf import DALLE
+from .dalle_mtf import DALLE, sample_autoregressive
 from .vae_tf import DiscreteVAE
+from tensorflow.python.ops import resources
 
 
 def initialize_vae_weights(checkpoint_path, scope="vae"):
@@ -16,7 +17,7 @@ def initialize_vae_weights(checkpoint_path, scope="vae"):
     vars_to_restore = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
     ckpt_vars = [
-          name for name, _ in tf.train.list_variables(checkpoint_path)]
+        name for name, _ in tf.train.list_variables(checkpoint_path)]
     tf.logging.info(f"RESTORING {len(vars_to_restore)} VAE VARS FROM CHECKPOINT: ")
     tf.logging.info(f"CHECKPOINT PATH: {checkpoint_path}")
     tf.logging.info(f"CHECKPOINT VARS:")
@@ -132,7 +133,48 @@ def dalle_model_fn(features, labels, mode, params):
 
     scalar_summary("input_image", mtf_features["image_inputs"])
     if mode == tf.estimator.ModeKeys.PREDICT:
-        raise NotImplementedError
+        # Set up the model for prediction
+        inputs = mtf_features["tokens"]
+
+        mtf_samples = sample_autoregressive(inputs,
+                                            model,
+                                            params,
+                                            stop_at_token=model.eos_token_id,
+                                            max_steps=None,
+                                            temperature=0.9,
+                                            variable_dtype=model.variable_dtype,
+                                            has_partial_sequences=True,
+                                            remove_partial_sequences=True,
+                                            sampling_keep_top_k=-1,
+                                            )
+
+        mtf_samples = mtf.anonymize(mtf_samples)
+        inputs = mtf.anonymize(inputs)
+        lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=True)
+        inputs = lowering.export_to_tf_tensor(inputs)
+        outputs = lowering.export_to_tf_tensor(mtf_samples)
+        # predictions_decoded = vae.decode(outputs)
+        predictions = {
+            "inputs": inputs,
+            "outputs": outputs}
+
+        def scaffold_fn():
+            return tf.train.Scaffold(
+                local_init_op=tf.group(
+                    tf.train.Scaffold.default_local_init_op(),
+                    lowering.copy_masters_to_slices(),
+                    name="mtf_local_init_op"),
+                ready_op=tf.concat(
+                    [tf.report_uninitialized_variables(),
+                     resources.report_uninitialized_resources()],
+                    axis=0,
+                    name="mtf_ready_op"))
+
+        return tpu_estimator.TPUEstimatorSpec(
+            mode=tf.estimator.ModeKeys.PREDICT,
+            predictions=predictions,
+            scaffold_fn=scaffold_fn,
+            prediction_hooks=[mtf.MtfRestoreHook(lowering)])
 
     # We're not predicting, so we better be training or evaluating
     assert (mode == tf.estimator.ModeKeys.TRAIN or mode == tf.estimator.ModeKeys.EVAL)
@@ -155,8 +197,9 @@ def dalle_model_fn(features, labels, mode, params):
     if num_microbatches > 1:
         # For serialize_training_step we need to modify the model to output results in a dict
         def serialized_fn(mtf_features):
-            loss, loss_batch = model.forward(mtf_features, return_loss=True)
-            return {"loss": loss, "loss_batch": loss_batch}
+            with tf.variable_scope('dall-e'):
+                loss, loss_batch = model.forward(mtf_features, return_loss=True)
+                return {"loss": loss, "loss_batch": loss_batch}
 
         # Serialize the training step - Gradients are accumulated locally and reduced once.
         var_grads, output_dict = mtf.serialize_training_step(mtf_features, serialized_fn, model.dimensions["batch_dim"],
@@ -164,7 +207,8 @@ def dalle_model_fn(features, labels, mode, params):
         loss = output_dict["loss"]
         loss_batch = output_dict["loss_batch"]
     else:
-        loss, loss_batch = model.forward(mtf_features, return_loss=True)
+        with tf.variable_scope('dall-e'):
+            loss, loss_batch = model.forward(mtf_features, return_loss=True)
 
     del loss_batch  # TODO: may need this for some metrics - otherwise, remove from output
 

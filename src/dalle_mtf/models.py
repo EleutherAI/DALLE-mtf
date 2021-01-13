@@ -179,6 +179,7 @@ class DALLE:
         self.activation_fn = activation_fn
         if self.is_incremental_inference:
             assert self.context is not None, "must have context in incremental inference"
+            assert self.context['mode'] == 'incremental'
         if params is None:  # extra params
             params = {}
         self.params = defaultdict(lambda: None, params)
@@ -254,25 +255,7 @@ class DALLE:
                 self.context.record_new_states([k, v])
 
             with tf.variable_scope("attention"):
-                if attention_type == "local":
-                    # `local_attention_1d` has built in autoregressive masking, so we don't need mask_attn_weights.
-                    radius = self.params.get("local_attention_radius", 256)
-                    if self.is_incremental_inference:
-                        q *= one_hot
-                    a = mtf_transformer.attention.local_attention_1d(
-                        q, k, v,
-                        length_dim=k.shape[1],
-                        key_dim=self.dimensions["kv_dim"],
-                        value_dim=self.dimensions["kv_dim"],
-                        radius=radius,
-                        length_dim_num_splits=1,
-                        fully_autoregressive=True,
-                        attention_kwargs={},
-                    )
-                    if self.is_incremental_inference:
-                        a = mtf.gather(a, self.context.position - 1, seq_dim)
-
-                elif attention_type == "global":
+                if attention_type == "global":
                     if exists(mask):
                         if not self.is_incremental_inference:
                             broadcasted_mask = mtf.broadcast(mask,
@@ -402,6 +385,7 @@ class DALLE:
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
         if not return_loss:
+            logits = mtf.cast(logits, self.variable_dtype.master_dtype)
             return logits
 
         labels = pad(inputs, [0, 1], dim_name="total_seq_dim", pad_value=self.eos_token_id)
