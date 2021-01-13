@@ -20,6 +20,9 @@ def vae_model_fn(features, labels, mode, params):
         hidden_dim=params["hidden_dim"],
         input_channels=n_channels,
         convblocks=params.get("convblocks", [(3, 64), (3, 128), (3, 256)]),
+        recompute_grad=params.get("recompute_grad", False),
+        use_bf16=params.get("use_bf16", False),
+        stack_factor=params.get("stack_factor", 1),
         dimensions=H
     )
 
@@ -34,9 +37,23 @@ def vae_model_fn(features, labels, mode, params):
 
     gumbel = train_gumbel if mode == tf.estimator.ModeKeys.TRAIN else eval_gumbel
 
+    if params.get("temp_anneal_steps", None):
+        warmup_frac = tf.cast(tf.train.get_global_step(), tf.float32) / params["temp_anneal_steps"]
+        warmup_frac = tf.minimum(warmup_frac, tf.constant(1.0))
+        temp = params["temp_start"] - warmup_frac * (params["temp_start"] - params["temp"])
+    else:
+        temp = params.get("temp", 1.0)
+
     # TODO: add back in microbatching
-    with tf.variable_scope("vae"):
-        loss, reconstruction = model.forward(features, return_recon_loss=True, hard_gumbel=gumbel)
+    if params.get("use_bf16", False):
+        with tf.tpu.bfloat16_scope():
+            with tf.variable_scope("vae"):
+                loss, reconstruction = model.forward(features, return_recon_loss=True, temperature=temp, hard_gumbel=gumbel)
+                loss = tf.cast(loss, tf.float32)
+                reconstruction = tf.cast(reconstruction, tf.float32)
+    else:
+        with tf.variable_scope("vae"):
+            loss, reconstruction = model.forward(features, return_recon_loss=True, temperature=temp, hard_gumbel=gumbel)
 
     optimizer = tf.train.AdamOptimizer(
         learning_rate=params["lr"]
