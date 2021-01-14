@@ -163,10 +163,15 @@ def dalle_model_fn(features, labels, mode, params):
         lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=False)
         inputs = lowering.export_to_tf_tensor(inputs)
         outputs = lowering.export_to_tf_tensor(mtf_samples)
-        # predictions_decoded = vae.decode(outputs)
+
+        img_outputs = outputs[:, -model.image_seq_len:]
+        predictions_decoded = vae.decode(img_outputs)
+
         predictions = {
             "inputs": inputs,
-            "outputs": outputs}
+            "outputs": outputs,
+            "predictions_decoded": predictions_decoded
+        }
 
         def scaffold_fn():
             return tf.train.Scaffold(

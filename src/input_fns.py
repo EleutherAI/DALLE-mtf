@@ -1,3 +1,5 @@
+import imageio
+import numpy as np
 import tensorflow.compat.v1 as tf
 
 
@@ -57,9 +59,9 @@ def pred_input(params, tokenizer, prompt='a cat in a hat'):
 
 
 def pred_output(predictions, out_name='test'):
-    with tf.gfile.Open(f"{out_name}.txt", "w") as f:
-        for i, p in enumerate(predictions):
-            f.write(str(p["outputs"].tolist()))
+    for i, p in enumerate(predictions):
+        denormalize = lambda x: (((x + 1) / 2) * 255.0).astype(np.uint8)
+        imageio.imwrite(f"{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
 
 
 def read_labeled_tfrecord(params):
