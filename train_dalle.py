@@ -31,6 +31,7 @@ def main():
     logging = setup_logging(args)
     params = fetch_model_params(args.model)
     params["vae_params"] = fetch_model_params(params["vae_model"])
+    save_config(params, params['model_dir'])
     assert params["model_type"].lower() == "dalle", f'model_type {params["model_type"]} not recognized'
 
     # Confirm deletion of checkpoint files if --new flag is set

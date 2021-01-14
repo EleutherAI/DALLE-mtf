@@ -9,6 +9,8 @@ import mesh_tensorflow as mtf
 import logging 
 import sys
 from mesh_tensorflow.ops import Operation, Tensor
+import re
+
 
 def fetch_model_params(model):
     model_path = model if model.endswith(".json") else f"./configs/{model}.json"
@@ -226,6 +228,35 @@ def scalar_summary(name, x):
   """
   return ScalarSummaryOperation(name, x)
 
+
 def get_image_seq_len(dalle_params):
     return (dalle_params["vae_params"]['dataset']['image_size'] // (2 ** len(dalle_params["vae_params"]['convblocks']))) ** 2 // (
                 dalle_params.get("vae_params").get("stack_factor", 1) ** 2)
+
+def save_config(params_dict, logdir):
+    tf.logging.info(f"Saving config to {logdir}")
+    text = "{\n\n"
+    total_params = len(params_dict)
+    for count, key in enumerate(params_dict):
+        config_value = str(params_dict[key])
+        if re.search('[a-zA-Z]', config_value):
+            if config_value.lower() != 'true':
+                if config_value.lower() != 'false':
+                    if config_value[0] != '[':
+                        # TODO: Making a manual exception for parsing epsilon right now since it's the only number in
+                        #       scientific notation. Should fix this.
+                        if key != "epsilon":
+                            config_value = f'"{config_value}"'
+        if count == total_params - 1:
+            text += f'"{str(key)}"' + ' : ' + config_value + '\n\n'
+        else:
+            text += f'"{str(key)}"' + ' : ' + config_value + ',\n\n'
+    text += '\n\n}'
+    sess = tf.InteractiveSession()
+    summary_op = tf.summary.text("run_config", tf.convert_to_tensor(text))
+    summary_writer = tf.summary.FileWriter(f"{logdir}/config", sess.graph)
+    text = sess.run(summary_op)
+    summary_writer.add_summary(text, 0)
+    summary_writer.flush()
+    summary_writer.close()
+    tf.reset_default_graph()
