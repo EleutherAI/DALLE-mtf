@@ -76,6 +76,10 @@ def dalle_model_fn(features, labels, mode, params):
         tokens = tf.math.argmax(vae_logits, -1)
         img_tokens_reshaped = tf.cast(tf.reshape(tokens, (batch_size, params['image_seq_len'])), tf.int32)
 
+        # TODO: get rid of this ugly hack, its just to pull the decoder parameters in during training
+        with tf.variable_scope('vae'):
+            vae.decoder(tf.zeros_like(vae_logits))
+
     # Construct mtf graph + mesh from params
     graph = mtf.Graph()
     mesh_shape = mtf.convert_to_shape(params["mesh_shape"])
@@ -165,7 +169,8 @@ def dalle_model_fn(features, labels, mode, params):
         outputs = lowering.export_to_tf_tensor(mtf_samples)
 
         img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
-        predictions_decoded = vae.decode(img_outputs)
+        with tf.variable_scope('vae'):
+            predictions_decoded = vae.decode(img_outputs)
 
         predictions = {
             "inputs": inputs,
