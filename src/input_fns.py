@@ -39,7 +39,7 @@ def truncate_or_pad_label(label, params):
 
 
 def pred_input(params, tokenizer, prompt='a cat in a hat'):
-    tokens = tokenizer.encode(prompt).ids
+    tokens = tokenizer.encode(prompt)
     if len(tokens) > params["total_seq_len"]:
         tf.logging.info("The length of your input prompt is longer than the model's text context length - truncating "
                         "input.")
@@ -59,7 +59,6 @@ def pred_input(params, tokenizer, prompt='a cat in a hat'):
 def pred_output(predictions, out_name='test'):
     with tf.gfile.Open(f"{out_name}.txt", "w") as f:
         for i, p in enumerate(predictions):
-            p = p["outputs"]
             f.write(str(p["outputs"]))
 
 

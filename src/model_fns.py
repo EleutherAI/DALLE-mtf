@@ -138,11 +138,9 @@ def dalle_model_fn(features, labels, mode, params):
         for key, x in features_dict.items():
             if x is not None:
                 if key == "text_inputs":
-                    text_tokens = tf.reshape(x, [batch_size, params["text_seq_len"]])
-                    x = tf.concat((text_tokens, img_tokens_reshaped + model.text_vocab_size), axis=1)
+                    text_tokens = tf.reshape(x, [batch_size, params["total_seq_len"]])
                     mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["total_seq_dim"]])
-
-                    mtf_features["tokens"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
+                    mtf_features["tokens"] = mtf.import_fully_replicated(mesh, text_tokens, mtf_shape, name=key)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         # Set up the model for prediction

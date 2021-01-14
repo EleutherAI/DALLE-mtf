@@ -82,7 +82,7 @@ def main():
         params=params)
     if args.predict:
         # Predict
-        pred_input_fn = partial(pred_input, params, tokenizer, args.prompt)
+        pred_input_fn = partial(pred_input, tokenizer=tokenizer, prompt=args.prompt)
         predictions = estimator.predict(input_fn=pred_input_fn)
         logging.info("Predictions generated")
         pred_output(predictions, 'test')

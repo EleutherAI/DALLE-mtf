@@ -228,8 +228,13 @@ class DALLE:
         return self.attn_mask
 
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
-        # x :: [batch, seq, n_embd]
-        batch_dim, seq_dim, embd_dim = x_shape = x.shape
+        if not self.is_incremental_inference:
+            # x :: [batch, seq, n_embd]
+            batch_dim, seq_dim, embd_dim = x_shape = x.shape
+        else:
+            batch_dim, embd_dim = x_shape = x.shape
+            seq_dim = self.dimensions['total_seq_dim']
+
         assert n_state.size % self.n_heads == 0, "n_state must be divisible by n_heads"
         with tf.variable_scope(name):
             # Compute attention inputs
@@ -379,6 +384,11 @@ class DALLE:
 
     def forward(self, features, return_loss=True, return_logits=False):
         inputs = features["tokens"]
+        if self.is_incremental_inference:
+            # reshape inputs if in inference mode
+            inputs = mtf.gather(inputs, self.context.position - 1, self.dimensions['total_seq_dim'])
+            inputs = mtf.reshape(inputs, [self.dimensions['batch_dim']])
+
         tokens = self.positional_embedding(self.embedding(inputs, "embedding"), "positional_embedding")
 
         mask = self.get_attn_mask(tokens.mesh, tokens.shape[1], self.dimensions["memory_len_dim"])
