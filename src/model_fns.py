@@ -164,7 +164,7 @@ def dalle_model_fn(features, labels, mode, params):
         inputs = lowering.export_to_tf_tensor(inputs)
         outputs = lowering.export_to_tf_tensor(mtf_samples)
 
-        img_outputs = outputs[:, -model.image_seq_len:]
+        img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
         predictions_decoded = vae.decode(img_outputs)
 
         predictions = {
