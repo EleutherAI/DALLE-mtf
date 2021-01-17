@@ -61,6 +61,9 @@ def pred_input(params, tokenizer, prompt='a cat in a hat'):
 def pred_output(predictions, out_name='test'):
     for i, p in enumerate(predictions):
         denormalize = lambda x: (((x + 1) / 2) * 255.0).astype(np.uint8)
+        # to debug: 
+        # with open(f"{out_name}_{i}.txt", 'w') as f:
+        #     f.write(str(p["outputs"].tolist()))
         imageio.imwrite(f"{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
 
 

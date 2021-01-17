@@ -134,7 +134,8 @@ def dalle_model_fn(features, labels, mode, params):
                     ])
                     x = tf.reshape(x, [batch_size, H, W, n_channels])  # NHWC
                     mtf_features["image_inputs"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
-        scalar_summary("input_image", mtf_features["image_inputs"])
+        denormalize = lambda x: (x + 1) / 2
+        scalar_summary("input_image", denormalize(mtf_features["image_inputs"]))
     else:
         features_dict = {"text_inputs": labels}
         mtf_features = {}
@@ -163,19 +164,21 @@ def dalle_model_fn(features, labels, mode, params):
 
         mtf_samples = mtf.anonymize(mtf_samples)
         inputs = mtf.anonymize(inputs)
-        lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=False)
+        lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=params.get('autostack', True))
+
         inputs = lowering.export_to_tf_tensor(inputs)
         outputs = lowering.export_to_tf_tensor(mtf_samples)
 
         initialize_vae_weights(vae_checkpoint_path)
-    
+
         img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
+
         with tf.variable_scope('vae'):
             predictions_decoded = vae.decode(img_outputs)
 
         predictions = {
             "inputs": inputs,
-            "outputs": outputs,
+            "outputs": img_outputs,
             "predictions_decoded": predictions_decoded
         }
 
@@ -250,10 +253,11 @@ def dalle_model_fn(features, labels, mode, params):
     get_graph_info(graph)
 
     # 'lowers' mtf tensors into a tf graph - this enables us to export results as tf tensors
-    lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=False)
+    lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=params.get('autostack', True))
 
     tf_loss = lowering.export_to_tf_tensor(loss)
     tf_loss = tf.cast(tf_loss, tf.float32)
+
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         # Use our patched version until mtf updates theirs
@@ -264,8 +268,12 @@ def dalle_model_fn(features, labels, mode, params):
         tf_update_ops = [lowering.lowered_operation(op) for op in update_ops]
         tf_update_ops.append(tf.assign_add(global_step, 1))  # Need to manually increment global_step
         train_op = tf.group(tf_update_ops)
+        
 
     with mtf.utils.outside_all_rewrites():
+        # only *now* can we initialize vae weights (stupid tensorflow)
+        initialize_vae_weights(vae_checkpoint_path)
+
         # Copy master variables to slices. Must be called first.
         restore_hook = mtf.MtfRestoreHook(lowering)
         if mode == tf.estimator.ModeKeys.TRAIN:
