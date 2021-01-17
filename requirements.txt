@@ -4,3 +4,7 @@ tpunicorn
 lm_dataformat
 opencv-python
 tqdm
+imageio
+tensorflow_datasets
+transformers
+cloud-tpu-client
