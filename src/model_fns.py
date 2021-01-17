@@ -63,7 +63,6 @@ def dalle_model_fn(features, labels, mode, params):
     # load vae in tensorflow graph before mtf
     vae, vae_checkpoint_path = load_vae_model(params, mode_str)
 
-    initialize_vae_weights(vae_checkpoint_path)
     H = W = params["dataset"]["image_size"]
     batch_size = params[f"{mode_str}_batch_size"]
     n_channels = params.get("input_channels", 3)
@@ -168,6 +167,8 @@ def dalle_model_fn(features, labels, mode, params):
         inputs = lowering.export_to_tf_tensor(inputs)
         outputs = lowering.export_to_tf_tensor(mtf_samples)
 
+        initialize_vae_weights(vae_checkpoint_path)
+    
         img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
         with tf.variable_scope('vae'):
             predictions_decoded = vae.decode(img_outputs)
