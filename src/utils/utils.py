@@ -68,7 +68,7 @@ def get_n_trainable_vars(graph):
         for dim in shape:
             variable_parameters *= dim.size
         total_parameters += variable_parameters
-    print(f"\n\nN PARAMS:\n{total_parameters:,}\n\n")
+    tf.logging.info(f"\n\nN PARAMS:\n{total_parameters:,}\n\n")
 
 
 def print_dim_names(graph):
@@ -85,10 +85,10 @@ def print_dim_names(graph):
     # Print all dim names in graph & write to file
     all_dim_names = [item for sublist in all_dim_names for item in sublist]  # Flatten all dims
     unique_dims = list(set(all_dim_names))
-    print("ALL DIM NAMES:")
+    tf.logging.info("ALL DIM NAMES:")
     for dim_name in unique_dims:
-        print(dim_name)
-    print('\n')
+        tf.logging.info(dim_name)
+    tf.logging.info('\n')
 
 
 def get_graph_info(graph):
