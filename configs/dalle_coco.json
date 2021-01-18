@@ -22,7 +22,7 @@
   "layout": "batch_dim:data,embed_dim:model",
   "n_embd": 1024,
   "text_vocab_size": 50258,
-  "image_vocab_size": 512,
+  "image_vocab_size": 2048,
   "text_seq_len": 256,
   "n_layers": 12,
   "n_heads": 8,
