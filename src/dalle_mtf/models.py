@@ -239,15 +239,20 @@ class DALLE:
     
     def get_logits_mask(self, mesh):
         if not exists(self.logits_mask):
+
+            # mask for image section: 1 means *masked*
             t = mtf.ones(mesh, mtf.Shape([self.dimensions['text_vocab_dim']]), tf.int32)
             i = mtf.zeros(mesh, mtf.Shape([self.dimensions['image_vocab_dim']]), tf.int32)
             eos = mtf.ones(mesh, mtf.Shape([mtf.Dimension(self.dimensions['image_vocab_dim'].name, 1)]), tf.int32)
             logits_mask = mtf.concat([t,i], self.dimensions['image_vocab_dim'].name)
             logits_mask = mtf.concat([logits_mask, eos], self.dimensions['image_vocab_dim'].name)
             new_shape = mtf.Shape([self.dimensions['batch_dim'], self.dimensions['total_seq_dim'], logits_mask.shape.dims[-1]])
+
+
+
             logits_mask = mtf.broadcast(logits_mask, new_shape)
             logits_mask = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
-            logits_mask += 1
+
             self.logits_mask = logits_mask
         return self.logits_mask
 
@@ -437,7 +442,7 @@ class DALLE:
         mask = self.get_attn_mask(tokens.mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
-        logits *= self.get_logits_mask(tokens.mesh)
+        logits += self.get_logits_mask(tokens.mesh)
         if not return_loss:
             logits = mtf.cast(logits, self.variable_dtype.master_dtype)
             return logits
