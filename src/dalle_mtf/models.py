@@ -5,7 +5,7 @@ from math import sqrt
 from collections import defaultdict
 import math
 
-from .ops import pad, exists, get_variable_dtype
+from .ops import pad, exists, get_variable_dtype, expand_tile
 from .layers import gumbel_softmax, mse_loss, norm
 
 
@@ -154,13 +154,16 @@ class DALLE:
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.attn_mask = attn_mask
+        self.logits_mask = None
         self.total_tokens = text_vocab_size + image_vocab_size + 1  # extra for EOS
         self.eos_token_id = self.total_tokens - 1 if eos_token_id is None else eos_token_id
         self.dimensions = {"embed_dim": mtf.Dimension("embed_dim", n_embd),
                            "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size),
                            "image_vocab_dim": mtf.Dimension("vocab_dim", image_vocab_size),
                            "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
-                           "total_seq_dim": mtf.Dimension("total_seq_dim", self.total_seq_dim),
+                           "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
+                           "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
+                           "total_seq_dim": mtf.Dimension("sequence_dim", self.total_seq_dim),
                            "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_dim),
                            "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_dim),
                            "heads_dim": mtf.Dimension("heads", n_heads),
@@ -186,7 +189,10 @@ class DALLE:
 
     def embedding(self, x, name):
         embd_dim = self.dimensions["embed_dim"]
-        vocab_dim = self.dimensions["final_vocab_dim"]
+        if "text" in name:
+            vocab_dim = self.dimensions["text_vocab_dim"]
+        else:
+            vocab_dim = self.dimensions["image_vocab_dim"]
         with tf.variable_scope(name):
             wte = mtf.get_variable(x.mesh, "wte",
                                    mtf.Shape([vocab_dim, embd_dim]),
@@ -202,6 +208,10 @@ class DALLE:
         return x
 
     def positional_embedding(self, x, name):
+        if "text" in name:
+            sequence_dim = self.dimensions["text_sequence_dim"]
+        else:
+            sequence_dim = self.dimensions["image_sequence_dim"]
         with tf.variable_scope(name):
             # Positional embedding
             wpe = mtf.get_variable(x.mesh, "wpe",
@@ -210,7 +220,7 @@ class DALLE:
                                    master_dtype=self.variable_dtype.master_dtype,
                                    slice_dtype=self.variable_dtype.slice_dtype,
                                    activation_dtype=self.variable_dtype.activation_dtype)
-            position_indices = mtf.range(x.mesh, self.dimensions["total_seq_dim"], tf.int64) if not \
+            position_indices = mtf.range(x.mesh, sequence_dim, tf.int64) if not \
                 self.is_incremental_inference else (self.context.position - 1)
             pos_emb = mtf.gather(wpe, position_indices, wpe.shape[0])
             embed_dropout = self.params.get("embed_dropout", 0)
@@ -226,10 +236,25 @@ class DALLE:
             i, j = map(lambda t: mtf.broadcast(t, [nd, ns]), (i, j))
             self.attn_mask = mtf.cast(mtf.less(i, j), self.variable_dtype.activation_dtype) * -1e10
         return self.attn_mask
+    
+    def get_logits_mask(self, mesh):
+        if not exists(self.logits_mask):
+            t = mtf.ones(mesh, mtf.Shape([self.dimensions['text_vocab_dim']]), tf.int32)
+            i = mtf.zeros(mesh, mtf.Shape([self.dimensions['image_vocab_dim']]), tf.int32)
+            eos = mtf.ones(mesh, mtf.Shape([mtf.Dimension(self.dimensions['image_vocab_dim'].name, 1)]), tf.int32)
+            logits_mask = mtf.concat([t,i], self.dimensions['image_vocab_dim'].name)
+            logits_mask = mtf.concat([logits_mask, eos], self.dimensions['image_vocab_dim'].name)
+            new_shape = mtf.Shape([self.dimensions['batch_dim'], self.dimensions['total_seq_dim'], logits_mask.shape.dims[-1]])
+            logits_mask = mtf.broadcast(logits_mask, new_shape)
+            logits_mask = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
+            logits_mask += 1
+            self.logits_mask = logits_mask
+        return self.logits_mask
 
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
         if not self.is_incremental_inference:
             # x :: [batch, seq, n_embd]
+            print(x.shape)
             batch_dim, seq_dim, embd_dim = x_shape = x.shape
         else:
             batch_dim, embd_dim = x_shape = x.shape
@@ -380,28 +405,47 @@ class DALLE:
         with tf.variable_scope("to_logits"):
             logits = self.linear(self.layer_norm(x), self.dimensions["final_vocab_dim"], name="linear_out")
             # Go to full precision for the logits
+            if self.is_incremental_inference:
+                # add seq dim in inference mode
+                logits = expand_tile(logits, mtf.Dimension("sequence_dim", 1), axis=1)
             return mtf.cast(logits, tf.float32)
 
+    def shift_labels(self, labels):
+        print(labels.shape)
+        labels = pad(labels, [0, 1], dim_name="sequence_dim", pad_value=self.eos_token_id)
+        indices = mtf.range(labels.mesh, mtf.Dimension("range", labels.shape[1].size - 1), tf.int32, name="labels_indices") + 1
+        labels = mtf.gather(labels, indices, dim=labels.shape[1])
+        labels = mtf.rename_dimension(labels, "range", "sequence_dim")
+        return labels
+
     def forward(self, features, return_loss=True, return_logits=False):
-        inputs = features["tokens"]
-        if self.is_incremental_inference:
+        if features.get('text_inputs') is not None:
+            text = features["text_inputs"]
+            text_emb = self.positional_embedding(self.embedding(text, "text_embd"), "text_pos_emb")
+        else:
+            assert self.is_incremental_inference
+        image = features.get("image_inputs", None)
+        if not self.is_incremental_inference:
+            image_emb = self.positional_embedding(self.embedding(image, "image_embd"), "image_pos_emb")
+            tokens = mtf.concat([text_emb, image_emb], concat_dim_name="sequence_dim")  # [batch, seq, n_embd]
+        else:
             # reshape inputs if in inference mode
-            inputs = mtf.gather(inputs, self.context.position - 1, self.dimensions['total_seq_dim'])
-            inputs = mtf.reshape(inputs, [self.dimensions['batch_dim']])
+            image = mtf.gather(image, self.context.position - 1, self.dimensions["image_sequence_dim"])
+            image = mtf.reshape(image, [self.dimensions["batch_dim"]])
+            tokens = self.positional_embedding(self.embedding(image, "image_embd"), "image_pos_emb")
 
-        tokens = self.positional_embedding(self.embedding(inputs, "embedding"), "positional_embedding")
-
-        mask = self.get_attn_mask(tokens.mesh, tokens.shape[1], self.dimensions["memory_len_dim"])
+        mask = self.get_attn_mask(tokens.mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
+        logits *= self.get_logits_mask(tokens.mesh)
         if not return_loss:
             logits = mtf.cast(logits, self.variable_dtype.master_dtype)
             return logits
 
-        labels = pad(inputs, [0, 1], dim_name="total_seq_dim", pad_value=self.eos_token_id)
-        indices = mtf.range(labels.mesh, mtf.Dimension("range", labels.shape[1].size - 1), tf.int32, name="labels_indices") + 1
-        labels = mtf.gather(labels, indices, dim=labels.shape[1])
-        labels = mtf.rename_dimension(labels, "range", "total_seq_dim")
+        assert exists(image), 'when training, image must be supplied'
+        offset_image = image + self.text_vocab_size
+        labels = mtf.concat([text, offset_image], concat_dim_name="sequence_dim")
+        labels = self.shift_labels(labels)
         loss, loss_batch = self._loss(logits, labels)
         if return_logits and return_loss:
             # Cast back to checkpoint dtype

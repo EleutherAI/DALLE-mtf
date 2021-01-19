@@ -110,47 +110,45 @@ def dalle_model_fn(features, labels, mode, params):
         params=params,
     )
 
-    # Build mtf_features & seq length dict for getting number of microbatches
-    # We need to pack inputs into a dict to pass into serialize_training_step
     if mode in [tf.estimator.ModeKeys.TRAIN, tf.estimator.ModeKeys.EVAL]:
-        features_dict = {"image_inputs": features,
-                         "text_inputs": labels}
+        # Build mtf_features & seq length dict for getting number of microbatches
+        # We need to pack inputs into a dict to pass into serialize_training_step
+        features_dict = {"image_inputs": img_tokens_reshaped,
+                        "text_inputs": labels}
         mtf_features = {}
         for key, x in features_dict.items():
             if x is not None:
                 if key == "text_inputs":
-                    text_tokens = tf.reshape(x, [batch_size, params["text_seq_len"]])
-                    x = tf.concat((text_tokens, img_tokens_reshaped + model.text_vocab_size), axis=1)
-                    mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["total_seq_dim"]])
-
+                    x = tf.reshape(x, [batch_size, params["text_seq_len"]])
+                    mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["text_sequence_dim"]])
                     mtf_features["tokens"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
-
                 if key == "image_inputs":
                     mtf_shape = mtf.Shape([
                         model.dimensions["batch_dim"],
-                        mtf.Dimension("img_height_dim", vae.H),
-                        mtf.Dimension("img_width_dim", vae.W),
-                        mtf.Dimension("img_channel_dim", vae.num_ch),
+                        model.dimensions["image_sequence_dim"],
                     ])
-                    x = tf.reshape(x, [batch_size, H, W, n_channels])  # NHWC
-                    mtf_features["image_inputs"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
-        denormalize = lambda x: (x + 1) / 2
-        scalar_summary("input_image", denormalize(mtf_features["image_inputs"]))
+                mtf_features[key] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)        
     else:
-        features_dict = {"text_inputs": labels}
+        # Build mtf_features & seq length dict for getting number of microbatches
+        # We need to pack inputs into a dict to pass into serialize_training_step
+        features_dict = {"text_inputs": labels, 'image_inputs': 'None'}
         mtf_features = {}
         for key, x in features_dict.items():
             if x is not None:
                 if key == "text_inputs":
-                    text_tokens = tf.reshape(x, [batch_size, params["total_seq_len"]])
-                    mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["total_seq_dim"]])
-                    mtf_features["tokens"] = mtf.import_fully_replicated(mesh, text_tokens, mtf_shape, name=key)
+                    x = tf.reshape(x, [batch_size, params["text_seq_len"]])
+                    mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["text_sequence_dim"]])
+                    mtf_features["tokens"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
+                    mtf_features[key] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)      
+                if key == "image_inputs":
+                    mtf_shape = mtf.Shape([
+                        model.dimensions["batch_dim"],
+                        model.dimensions["image_sequence_dim"],
+                    ])
+                    mtf_features[key] = mtf.zeros(mesh, mtf_shape, tf.int32) + params['padding_id']
 
-    if mode == tf.estimator.ModeKeys.PREDICT:
         # Set up the model for prediction
-        inputs = mtf_features["tokens"]
-
-        mtf_samples = sample_autoregressive(inputs,
+        mtf_samples = sample_autoregressive(mtf_features,
                                             model,
                                             params,
                                             stop_at_token=model.eos_token_id,
@@ -163,22 +161,19 @@ def dalle_model_fn(features, labels, mode, params):
                                             )
 
         mtf_samples = mtf.anonymize(mtf_samples)
-        inputs = mtf.anonymize(inputs)
         lowering = mtf.Lowering(graph, {mesh: mesh_impl}, autostack=params.get('autostack', True))
 
-        inputs = lowering.export_to_tf_tensor(inputs)
         outputs = lowering.export_to_tf_tensor(mtf_samples)
 
         initialize_vae_weights(vae_checkpoint_path)
 
-        img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
+        outputs -= model.text_vocab_size
 
         with tf.variable_scope('vae'):
-            predictions_decoded = vae.decode(img_outputs)
+            predictions_decoded = vae.decode(outputs)
 
         predictions = {
-            "inputs": inputs,
-            "outputs": img_outputs,
+            "outputs": outputs,
             "predictions_decoded": predictions_decoded
         }
 

@@ -46,9 +46,9 @@ def pred_input(params, tokenizer, prompt='a cat in a hat'):
         tf.logging.info("The length of your input prompt is longer than the model's text context length - truncating "
                         "input.")
         tokens = tokens[len(tokens) - params["text_seq_len"]:]  # TODO: left or right truncate here?
-    if len(tokens) < params["total_seq_len"]:
-        tokens = tf.pad(tokens, [[0, params["total_seq_len"] - len(tokens)]], constant_values=params["padding_id"])
-    t = tf.broadcast_to(tokens, [params["batch_size"], params["total_seq_len"]])
+    if len(tokens) < params["text_seq_len"]:
+        tokens = tf.pad(tokens, [[0, params["text_seq_len"] - len(tokens)]], constant_values=params["padding_id"])
+    t = tf.broadcast_to(tokens, [params["batch_size"], params["text_seq_len"]])
     dataset = tf.data.Dataset.from_tensors(t)
 
     def _dummy_labels(x):
@@ -62,8 +62,8 @@ def pred_output(predictions, out_name='test'):
     for i, p in enumerate(predictions):
         denormalize = lambda x: (((x + 1) / 2) * 255.0).astype(np.uint8)
         # to debug: 
-        # with open(f"{out_name}_{i}.txt", 'w') as f:
-        #     f.write(str(p["outputs"].tolist()))
+        with open(f"{out_name}_{i}.txt", 'w') as f:
+            f.write(str(p["outputs"].tolist()))
         imageio.imwrite(f"{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
 
 

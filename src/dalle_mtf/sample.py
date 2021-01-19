@@ -26,7 +26,7 @@ def sample_autoregressive(inputs,
     has_partial_sequences=False (so we can skip computation).
 
     Args:
-        inputs: an int32 Tensor with shape [<batch_dims>, length_dim],
+        inputs: an input dictionary containing 'text_inputs' and 'image_inputs',
         model: DALL-E model
         params: model paramers.
         stop_at_token: an optional integer eos id.  Stop when we produce it.
@@ -48,24 +48,29 @@ def sample_autoregressive(inputs,
     # with dalle, inputs will be a text sequence of len 256, then the rest image tokens.
     # the parts we want to fill in will be <|pad_token|>, which we should assign in the input
 
-    batch_dims = inputs.shape.dims[:-1]
-    length_dim = inputs.shape.dims[-1]
+    batch_dims = model.dimensions["batch_dim"]
+    length_dim = model.dimensions["total_seq_dim"]
+    image_seq_dim = model.dimensions['image_sequence_dim']
     padding_id = params.get("padding_id", 0)
+    image_inputs = inputs['image_inputs']
+    text_inputs = inputs['text_inputs']
 
+    # Gets position (in image inputs) where zero padding starts
     initial_position = mtf.reduce_sum(
-        mtf.to_int32(mtf.not_equal(inputs, padding_id)),
-        reduced_dim=length_dim)  # Gets position where zero padding starts
+        mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
+        reduced_dim=image_seq_dim) 
+    # initial_position += model.dimensions['text_seq_dim'].size
 
-    length_range = mtf.range(inputs.mesh, length_dim, tf.int32)
+    length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
 
     # Builds context to pass around internally
     # The 'first part' context records initial states of k / v / x
 
     context_first_part = mtf_transformer.transformer.Context(
         model=None,
-        mesh=inputs.mesh,
+        mesh=image_inputs.mesh,
         batch_dims=batch_dims,
-        length_dim=length_dim,
+        length_dim=image_seq_dim,
         variable_dtype=variable_dtype,
         mode="first_part",
         position=length_range,
@@ -78,7 +83,7 @@ def sample_autoregressive(inputs,
     model.context = context_first_part
 
     with tf.variable_scope('dall-e'):
-        logits = model.forward({'tokens': inputs}, return_loss=False, return_logits=True)
+        logits = model.forward(inputs, return_loss=False, return_logits=True)
     del logits
 
     if not has_partial_sequences:
@@ -91,12 +96,12 @@ def sample_autoregressive(inputs,
 
     if stop_at_token is not None:
         partial_sequences_eos_count = mtf.reduce_sum(
-            mtf.to_int32(mtf.equal(inputs, stop_at_token)),
-            reduced_dim=length_dim)
+            mtf.to_int32(mtf.equal(image_inputs, stop_at_token)),
+            reduced_dim=image_seq_dim)
 
     def cond_fn(position, ids, *unused_states):
         """Should we run another loop iteration?"""
-        past_end = mtf.greater_equal(position, length_dim.size)
+        past_end = mtf.greater_equal(position, image_seq_dim.size)
         if max_steps:
             past_end = mtf.logical_or(
                 past_end, mtf.greater_equal(position - initial_position, max_steps))
@@ -105,7 +110,7 @@ def sample_autoregressive(inputs,
         if stop_at_token is not None:
             eos_count = mtf.reduce_sum(
                 mtf.to_int32(mtf.equal(ids, stop_at_token)),
-                reduced_dim=length_dim)
+                reduced_dim=image_seq_dim)
             has_additional_eos = mtf.greater(eos_count, partial_sequences_eos_count)
             is_done = mtf.logical_or(is_done, has_additional_eos)
         all_done = mtf.reduce_all(is_done)
@@ -117,9 +122,9 @@ def sample_autoregressive(inputs,
 
         context = mtf_transformer.transformer.Context(
             model=None,
-            mesh=inputs.mesh,
+            mesh=image_inputs.mesh,
             batch_dims=batch_dims,
-            length_dim=length_dim,
+            length_dim=image_seq_dim,
             variable_dtype=variable_dtype,
             mode="incremental",
             position=position,
@@ -133,7 +138,7 @@ def sample_autoregressive(inputs,
         model.is_incremental_inference = True
         model.context = context
         with tf.variable_scope("dall-e", reuse=tf.AUTO_REUSE):
-            logits = model.forward({'tokens': inputs}, return_loss=False, return_logits=True)
+            logits = model.forward({'image_inputs': image_inputs}, return_loss=False, return_logits=True)
 
         # By default, do top_k sampling of 0.9
         if sampling_keep_top_k == -2:
@@ -151,10 +156,9 @@ def sample_autoregressive(inputs,
         # temperature sampling
         ids_this_step = mtf.sample_with_temperature(
             logits, model.dimensions['final_vocab_dim'], temperature)
-
         # reshape & assign results
-        ids_this_step = mtf.reshape(ids_this_step, batch_dims)
-        one_hot = mtf.one_hot(position, length_dim, dtype=tf.int32)
+        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+        one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
         one_new_id = ids_this_step * one_hot
         new_ids = (1 - one_hot) * ids + one_new_id
         new_position = position + 1
@@ -162,15 +166,15 @@ def sample_autoregressive(inputs,
         ret += context.new_states
         return ret
 
-    while_loop_inputs = [initial_position, inputs] + initial_states
+    while_loop_inputs = [initial_position, image_inputs] + initial_states
     final_position, outputs = mtf.while_loop(
         cond_fn, body_fn, while_loop_inputs)[:2]
     del final_position
-    if has_partial_sequences and remove_partial_sequences:
-        # Remove partial sequences from outputs
-        partial_length = mtf.reduce_sum(
-            mtf.to_int32(mtf.not_equal(inputs, padding_id)),
-            reduced_dim=length_dim)
-        outputs = mtf.dynamic_shift(
-            outputs, -partial_length, length_dim, wrap=False)
+    # if has_partial_sequences and remove_partial_sequences:
+    #     # Remove partial sequences from outputs
+    #     partial_length = mtf.reduce_sum(
+    #         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
+    #         reduced_dim=image_seq_dim)
+    #     outputs = mtf.dynamic_shift(
+    #         outputs, -partial_length, image_seq_dim, wrap=False)
     return outputs
