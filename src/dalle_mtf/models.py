@@ -365,7 +365,8 @@ class DALLE:
 
     def _loss(self, logits, labels):
         with tf.variable_scope("loss_final"):
-            loss_batch = self.loss_fn(logits=logits[:, self.text_seq_len:], targets=labels[:, self.text_seq_len:],
+            loss_batch = self.loss_fn(logits =mtf.slice(logits, begin=self.text_seq_len, size=self.image_seq_len, slice_dim_name="sequence_dim"), 
+                                      targets=mtf.slice(labels, begin=self.text_seq_len, size=self.image_seq_len, slice_dim_name="sequence_dim"),
                                       vocab_dim=logits.shape[-1], z_loss=0.0)
 
         with tf.variable_scope("reduce_mean_final"):
