@@ -250,10 +250,10 @@ class DALLE:
             new_shape_incremental = mtf.Shape([self.dimensions['batch_dim'], mtf.Dimension(self.dimensions['total_seq_dim'].name, 1), logits_mask.shape.dims[-1]])
 
             logits_mask_full = mtf.broadcast(logits_mask, new_shape)
-            logits_mask_full = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
+            logits_mask_full = mtf.cast(mtf.equal(logits_mask_incremental, 1), tf.float32) * -1e10
             
             logits_mask_incremental = mtf.broadcast(logits_mask, new_shape_incremental)
-            logits_mask_incremental = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
+            logits_mask_incremental = mtf.cast(mtf.equal(logits_mask_incremental, 1), tf.float32) * -1e10
 
             self.logits_mask = logits_mask_full
             self.logits_mask_incremental = logits_mask_incremental
