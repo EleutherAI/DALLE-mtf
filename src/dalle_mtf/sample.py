@@ -157,7 +157,8 @@ def sample_autoregressive(inputs,
         ids_this_step = mtf.sample_with_temperature(
             logits, model.dimensions['final_vocab_dim'], temperature)
         # reshape & assign results
-        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims, ids_this_step.shape[-1]]))
+        ids_this_step = mtf.slice(logits, begin=model.text_seq_len, size=model.image_seq_len, slice_dim_name="sequence_dim")
         one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
         one_new_id = ids_this_step * one_hot
         new_ids = (1 - one_hot) * ids + one_new_id
