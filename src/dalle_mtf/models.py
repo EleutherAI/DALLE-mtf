@@ -247,14 +247,21 @@ class DALLE:
             logits_mask = mtf.concat([t,i], self.dimensions['image_vocab_dim'].name)
             logits_mask = mtf.concat([logits_mask, eos], self.dimensions['image_vocab_dim'].name)
             new_shape = mtf.Shape([self.dimensions['batch_dim'], self.dimensions['total_seq_dim'], logits_mask.shape.dims[-1]])
+            new_shape_incremental = mtf.Shape([self.dimensions['batch_dim'], mtf.Dimension(self.dimensions['total_seq_dim'].name, 1), logits_mask.shape.dims[-1]])
 
+            logits_mask_full = mtf.broadcast(logits_mask, new_shape)
+            logits_mask_full = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
+            
+            logits_mask_incremental = mtf.broadcast(logits_mask, new_shape_incremental)
+            logits_mask_incremental = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
 
-
-            logits_mask = mtf.broadcast(logits_mask, new_shape)
-            logits_mask = mtf.cast(mtf.equal(logits_mask, 1), tf.float32) * -1e10
-
-            self.logits_mask = logits_mask
-        return self.logits_mask
+            self.logits_mask = logits_mask_full
+            self.logits_mask_incremental = logits_mask_incremental
+            
+        if self.is_incremental_inference:
+            return self.logits_mask_incremental
+        else:
+            return self.logits_mask
 
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
         if not self.is_incremental_inference:
