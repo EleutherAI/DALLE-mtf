@@ -6,8 +6,15 @@ from .optimizers import get_optimizer
 from .utils import mode_to_str, get_graph_info, create_host_call, simd_mesh_setup, scalar_summary
 from .dalle_mtf import DALLE, sample_autoregressive
 from .vae_tf import DiscreteVAE
+from .dalle_mtf.ops import mask_to_bias
 from tensorflow.python.ops import resources
 
+def get_tf_logits_mask(text_vocab_size, total_vocab_size, text_seq_len, image_seq_len):
+    mask_inp = [text_vocab_size for _ in range(text_seq_len)]
+    x = tf.logical_not(tf.sequence_mask(mask_inp, total_vocab_size)) 
+    mask_inp = [text_vocab_size for _ in range(image_seq_len)]
+    y = tf.sequence_mask(mask_inp, total_vocab_size)
+    return tf.concat([x, y], 0)
 
 def initialize_vae_weights(checkpoint_path, scope="vae"):
     """
@@ -97,6 +104,7 @@ def dalle_model_fn(features, labels, mode, params):
     mesh = mtf.Mesh(graph, "my_mesh", var_placer)
 
     model = DALLE(
+        mesh=mesh,
         n_embd=params["n_embd"],
         text_vocab_size=params["text_vocab_size"],
         image_vocab_size=params["image_vocab_size"],
@@ -109,6 +117,10 @@ def dalle_model_fn(features, labels, mode, params):
         mode=mode_str,
         params=params,
     )
+
+    tf_logits_mask = get_tf_logits_mask(params["text_vocab_size"], params["text_vocab_size"]+params["image_vocab_size"], 
+                                        params["text_seq_len"], params['image_seq_len'])
+    model.set_logits_mask(tf_logits_mask)
 
     if mode in [tf.estimator.ModeKeys.TRAIN, tf.estimator.ModeKeys.EVAL]:
         # Build mtf_features & seq length dict for getting number of microbatches

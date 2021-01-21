@@ -5,7 +5,7 @@ from math import sqrt
 from collections import defaultdict
 import math
 
-from .ops import pad, exists, get_variable_dtype, expand_tile
+from .ops import pad, exists, get_variable_dtype, expand_tile, mask_to_bias
 from .layers import gumbel_softmax, mse_loss, norm
 
 
@@ -140,11 +140,12 @@ class DiscreteVAE:
 
 class DALLE:
 
-    def __init__(self, n_embd, text_vocab_size=12800, image_vocab_size=512, text_seq_len=256, image_seq_len=1024,
+    def __init__(self, mesh, n_embd, text_vocab_size=12800, image_vocab_size=512, text_seq_len=256, image_seq_len=1024,
                  n_layers=6, n_heads=8, batch_size=32, bf_16=True, attn_mask=None, mode="train",
                  is_incremental_inference=False, context=None, loss_fn=None, params=None, eos_token_id=None,
                  activation_fn=None):
 
+        self.mesh = mesh
         self.n_embd = n_embd
         self.text_vocab_size = text_vocab_size
         self.image_vocab_size = image_vocab_size
@@ -156,7 +157,7 @@ class DALLE:
         self.attn_mask = attn_mask
         self.logits_mask = None
         self.total_tokens = text_vocab_size + image_vocab_size + 1  # extra for EOS
-        self.eos_token_id = self.total_tokens - 1 if eos_token_id is None else eos_token_id
+        self.eos_token_id = self.total_tokens - 1 if eos_token_id is None else eos_token_id         
         self.dimensions = {"embed_dim": mtf.Dimension("embed_dim", n_embd),
                            "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size),
                            "image_vocab_dim": mtf.Dimension("vocab_dim", image_vocab_size),
@@ -237,31 +238,10 @@ class DALLE:
             self.attn_mask = mtf.cast(mtf.less(i, j), self.variable_dtype.activation_dtype) * -1e10
         return self.attn_mask
     
-    def get_logits_mask(self, mesh):
-        if not exists(self.logits_mask):
-
-            # mask for image section: 1 means *masked*
-            t = mtf.ones(mesh, mtf.Shape([self.dimensions['text_vocab_dim']]), tf.int32)
-            i = mtf.zeros(mesh, mtf.Shape([self.dimensions['image_vocab_dim']]), tf.int32)
-            eos = mtf.ones(mesh, mtf.Shape([mtf.Dimension(self.dimensions['image_vocab_dim'].name, 1)]), tf.int32)
-            logits_mask = mtf.concat([t,i], self.dimensions['image_vocab_dim'].name)
-            logits_mask = mtf.concat([logits_mask, eos], self.dimensions['image_vocab_dim'].name)
-            new_shape = mtf.Shape([self.dimensions['batch_dim'], self.dimensions['total_seq_dim'], logits_mask.shape.dims[-1]])
-            new_shape_incremental = mtf.Shape([self.dimensions['batch_dim'], mtf.Dimension(self.dimensions['total_seq_dim'].name, 1), logits_mask.shape.dims[-1]])
-
-            logits_mask_full = mtf.broadcast(logits_mask, new_shape)
-            logits_mask_full = mtf.cast(mtf.equal(logits_mask_incremental, 1), tf.float32) * -1e10
-            
-            logits_mask_incremental = mtf.broadcast(logits_mask, new_shape_incremental)
-            logits_mask_incremental = mtf.cast(mtf.equal(logits_mask_incremental, 1), tf.float32) * -1e10
-
-            self.logits_mask = logits_mask_full
-            self.logits_mask_incremental = logits_mask_incremental
-            
-        if self.is_incremental_inference:
-            return self.logits_mask_incremental
-        else:
-            return self.logits_mask
+    def set_logits_mask(self, tf_mask):
+        mask_shape = mtf.Shape([self.dimensions['total_seq_dim'], self.dimensions['final_vocab_dim']])
+        mtf_mask = mask_to_bias(mtf.import_fully_replicated(self.mesh, tf_mask, mask_shape), tf.float32)
+        self.logits_mask = mtf_mask
 
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
         if not self.is_incremental_inference:
@@ -423,6 +403,7 @@ class DALLE:
                 logits = expand_tile(logits, mtf.Dimension("sequence_dim", 1), axis=1)
             return mtf.cast(logits, tf.float32)
 
+    
     def shift_labels(self, labels):
         print(labels.shape)
         labels = pad(labels, [0, 1], dim_name="sequence_dim", pad_value=self.eos_token_id)
@@ -431,6 +412,7 @@ class DALLE:
         labels = mtf.rename_dimension(labels, "range", "sequence_dim")
         return labels
 
+    
     def forward(self, features, return_loss=True, return_logits=False):
         if features.get('text_inputs') is not None:
             text = features["text_inputs"]
@@ -450,7 +432,9 @@ class DALLE:
         mask = self.get_attn_mask(tokens.mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
-        logits += self.get_logits_mask(tokens.mesh)
+        if not self.is_incremental_inference:
+            logits += mtf.cast(self.logits_mask, logits.dtype)
+
         if not return_loss:
             logits = mtf.cast(logits, self.variable_dtype.master_dtype)
             return logits
