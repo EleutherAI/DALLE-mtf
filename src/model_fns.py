@@ -8,13 +8,21 @@ from .dalle_mtf import DALLE, sample_autoregressive
 from .vae_tf import DiscreteVAE
 from .dalle_mtf.ops import mask_to_bias
 from tensorflow.python.ops import resources
+import numpy as np
 
-def get_tf_logits_mask(text_vocab_size, total_vocab_size, text_seq_len, image_seq_len):
-    mask_inp = [text_vocab_size for _ in range(text_seq_len)]
-    x = tf.logical_not(tf.sequence_mask(mask_inp, total_vocab_size)) 
-    mask_inp = [text_vocab_size for _ in range(image_seq_len)]
-    y = tf.sequence_mask(mask_inp, total_vocab_size)
-    return tf.concat([x, y], 0)
+def get_tf_logits_mask(num_text_tokens, total_tokens, text_seq_len, image_seq_len): 
+    seq_len = text_seq_len + image_seq_len
+
+    seq_range = np.arange(seq_len).reshape((1,-1,1))
+    logits_range = np.arange(total_tokens).reshape((1,1,-1))
+
+    logits_mask = (((seq_range >= (text_seq_len - 1)) & (logits_range < num_text_tokens)) | 
+                   ((seq_range < (text_seq_len - 1)) & (logits_range >= num_text_tokens)) | 
+                   ((seq_range != (seq_len - 1)) & (logits_range >= (total_tokens - 1))) )
+    logits_mask = np.squeeze(logits_mask)
+    logits_mask = logits_mask * -1e9
+    logits_mask = logits_mask.astype(np.float32)
+    return tf.constant(logits_mask)
 
 def initialize_vae_weights(checkpoint_path, scope="vae"):
     """
@@ -118,7 +126,7 @@ def dalle_model_fn(features, labels, mode, params):
         params=params,
     )
 
-    tf_logits_mask = get_tf_logits_mask(params["text_vocab_size"], params["text_vocab_size"]+params["image_vocab_size"], 
+    tf_logits_mask = get_tf_logits_mask(params["text_vocab_size"], model.total_tokens, 
                                         params["text_seq_len"], params['image_seq_len'])
     model.set_logits_mask(tf_logits_mask)
 
