@@ -1,5 +1,6 @@
 import mesh_tensorflow as mtf
 import tensorflow.compat.v1 as tf
+
 from tensorflow.python.tpu import tpu_estimator
 import mesh_tensorflow.transformer as mtf_transformer
 from .optimizers import get_optimizer
@@ -177,7 +178,7 @@ def dalle_model_fn(features, labels, mode, params):
                                             variable_dtype=model.variable_dtype,
                                             has_partial_sequences=True,
                                             remove_partial_sequences=True,
-                                            sampling_keep_top_k=-1,
+                                            sampling_keep_top_k=-2,
                                             )
 
         mtf_samples = mtf.anonymize(mtf_samples)
@@ -188,7 +189,6 @@ def dalle_model_fn(features, labels, mode, params):
         initialize_vae_weights(vae_checkpoint_path)
 
         outputs -= model.text_vocab_size
-
         with tf.variable_scope('vae'):
             predictions_decoded = vae.decode(outputs)
 
@@ -196,7 +196,7 @@ def dalle_model_fn(features, labels, mode, params):
             "outputs": outputs,
             "predictions_decoded": predictions_decoded
         }
-
+        denormalize = lambda x: (((x + 1) / 2) * 255.0)
         def scaffold_fn():
             return tf.train.Scaffold(
                 local_init_op=tf.group(
@@ -222,7 +222,7 @@ def dalle_model_fn(features, labels, mode, params):
         # Gets number of microbatches per batch for serialized training
         # if param tokens_per_mb_per_replica = None, this defaults to 1 and no microbatching is performed
         num_microbatches = int(mtf_transformer.utils.serialize_num_microbatches(batch_dim=model.dimensions["batch_dim"],
-                                                                                sequence_length=model.total_seq_dim,
+                                                                                sequence_length=model.total_seq_len,
                                                                                 mesh_shape=mesh_shape,
                                                                                 layout_rules=layout_rules,
                                                                                 tokens_per_microbatch_per_replica=

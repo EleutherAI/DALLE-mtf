@@ -151,7 +151,7 @@ class DALLE:
         self.image_vocab_size = image_vocab_size
         self.text_seq_len = text_seq_len
         self.image_seq_len = image_seq_len
-        self.total_seq_dim = text_seq_len + image_seq_len
+        self.total_seq_len = text_seq_len + image_seq_len
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.attn_mask = attn_mask
@@ -164,9 +164,9 @@ class DALLE:
                            "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
                            "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
                            "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
-                           "total_seq_dim": mtf.Dimension("sequence_dim", self.total_seq_dim),
-                           "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_dim),
-                           "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_dim),
+                           "total_seq_dim": mtf.Dimension("sequence_dim", self.total_seq_len),
+                           "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_len),
+                           "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_len),
                            "heads_dim": mtf.Dimension("heads", n_heads),
                            "kv_dim": mtf.Dimension("kv_dim", n_embd // n_heads),
                            "batch_dim": mtf.Dimension("batch_dim", batch_size)}
@@ -248,7 +248,6 @@ class DALLE:
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
         if not self.is_incremental_inference:
             # x :: [batch, seq, n_embd]
-            print(x.shape)
             batch_dim, seq_dim, embd_dim = x_shape = x.shape
         else:
             batch_dim, embd_dim = x_shape = x.shape
@@ -408,9 +407,7 @@ class DALLE:
     
     def shift_labels(self, labels):
         labels = pad(labels, [0, 1], dim_name="sequence_dim", pad_value=self.eos_token_id)
-        indices = mtf.range(labels.mesh, mtf.Dimension("range", labels.shape[1].size - 1), tf.int32, name="labels_indices") + 1
-        labels = mtf.gather(labels, indices, dim=labels.shape[1])
-        labels = mtf.rename_dimension(labels, "range", "sequence_dim")
+        labels = mtf.slice(labels, 1, self.total_seq_len, "sequence_dim")
         return labels
 
     

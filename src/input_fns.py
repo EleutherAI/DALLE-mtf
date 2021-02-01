@@ -1,7 +1,7 @@
 import imageio
 import numpy as np
 import tensorflow.compat.v1 as tf
-
+import os
 
 def crop_center_and_resize(img, size):
     s = tf.shape(img)
@@ -58,13 +58,12 @@ def pred_input(params, tokenizer, prompt='a cat in a hat'):
     return dataset
 
 
-def pred_output(predictions, out_name='test'):
+def pred_output(predictions, out_name='test', output_dir='outputs'):
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
     for i, p in enumerate(predictions):
         denormalize = lambda x: (((x + 1) / 2) * 255.0).astype(np.uint8)
-        # to debug: 
-        with open(f"{out_name}_{i}.txt", 'w') as f:
-            f.write(str(p["outputs"].tolist()))
-        imageio.imwrite(f"{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
+        imageio.imwrite(f"outputs/{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
 
 
 def read_labeled_tfrecord(params):
