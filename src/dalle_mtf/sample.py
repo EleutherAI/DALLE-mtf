@@ -150,10 +150,10 @@ def sample_autoregressive(inputs,
         ids_this_step = mtf.sample_with_temperature(
             logits, model.dimensions['image_vocab_dim'], temperature)
 
-        # because the image ids are in the range of [0, image_seq_len)
-        # it must be bumped up by the `text_seq_len` to be in the order of [[text embeds] [image _embeds]] in the input embeddings
+        # because the image ids are in the range of [0, image_vocab_size)
+        # it must be bumped up by the `text_vocab_size` to be in the order of [[text embeds] [image _embeds]] in the input embeddings
 
-        ids_this_step += model.text_seq_len
+        ids_this_step += model.text_vocab_size
 
         # reshape & assign results
         ids_this_step = mtf.reshape(ids_this_step, batch_dims)
