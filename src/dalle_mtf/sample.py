@@ -142,13 +142,18 @@ def sample_autoregressive(inputs,
                 raise ValueError("sampling_keep_top_k must either be -1 or positive.")
             k_largest = mtf.nth_largest_element(
                 logits, n=sampling_keep_top_k,
-                reduced_dim=model.dimensions['final_vocab_dim'])
+                reduced_dim=model.dimensions['image_vocab_dim'])
             logits = mtf.where(mtf.less_equal(logits, k_largest),
                                mtf.ones_like(logits) * -1e6, logits)
 
         # temperature sampling
         ids_this_step = mtf.sample_with_temperature(
-            logits, model.dimensions['final_vocab_dim'], temperature)
+            logits, model.dimensions['image_vocab_dim'], temperature)
+
+        # because the image ids are in the range of [0, image_seq_len)
+        # it must be bumped up by the `text_seq_len` to be in the order of [[text embeds] [image _embeds]] in the input embeddings
+
+        ids_this_step += model.text_seq_len
 
         # reshape & assign results
         ids_this_step = mtf.reshape(ids_this_step, batch_dims)

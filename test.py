@@ -56,6 +56,8 @@ def test_sampling():
 
     model = DALLE(
         batch_size = 1,
+        text_seq_len = 1,
+        image_seq_len = 4,
         n_embd = 16,
         n_heads = 2,
         bf_16 = False
@@ -64,7 +66,7 @@ def test_sampling():
     batch_dim = model.dimensions["batch_dim"]
     sequence_dim = model.dimensions["total_seq_dim"]
 
-    inputs = mtf.ones(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
+    inputs = mtf.zeros(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
 
     with not_raises(Exception):
         samples = sample_autoregressive(
