@@ -9,6 +9,7 @@ def sample_autoregressive(inputs,
                           max_steps=None,
                           temperature=0.9,
                           padding_id = 0,
+                          min_start_pos = None,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
@@ -53,6 +54,11 @@ def sample_autoregressive(inputs,
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(inputs, padding_id)),
         reduced_dim=length_dim)  # Gets position where zero padding starts
+
+    if min_start_pos is not None:
+        # force the sampling to never start below a minimum starting position, say the text length.
+        # this will also be useful for image completion, where you can start sampling from half the image tokens
+        initial_position = mtf.maximum(initial_position, min_start_pos)
 
     length_range = mtf.range(inputs.mesh, length_dim, tf.int32)
 

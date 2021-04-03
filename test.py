@@ -70,8 +70,14 @@ def test_sampling():
 
     with not_raises(Exception):
         samples = sample_autoregressive(
-            inputs, model, variable_dtype=mtf.VariableDType(), max_steps = sequence_dim.size,
-            remove_partial_sequences=False, stop_at_token=None)
+            inputs,
+            model,
+            variable_dtype=mtf.VariableDType(),
+            max_steps = sequence_dim.size,
+            remove_partial_sequences=False,
+            stop_at_token=None,
+            min_start_pos=model.text_seq_len
+        )
 
         mesh_impl = placement_mesh_impl.PlacementMeshImpl(shape=[], layout={}, devices=[""])
         lowering = mtf.Lowering(graph, {mesh: mesh_impl})
