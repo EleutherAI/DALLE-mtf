@@ -5,10 +5,10 @@ import mesh_tensorflow.transformer as mtf_transformer
 
 def sample_autoregressive(inputs,
                           model,
-                          params,
                           stop_at_token=50256,
                           max_steps=None,
                           temperature=0.9,
+                          padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
@@ -28,7 +28,6 @@ def sample_autoregressive(inputs,
     Args:
         inputs: an int32 Tensor with shape [<batch_dims>, length_dim],
         model: DALL-E model
-        params: model paramers.
         stop_at_token: an optional integer eos id.  Stop when we produce it.
         max_steps: an optional integer, the max number of steps to decode.
         temperature: an optional floating point value between 0.0 and 1.0 0.0
@@ -50,7 +49,6 @@ def sample_autoregressive(inputs,
 
     batch_dims = inputs.shape.dims[:-1]
     length_dim = inputs.shape.dims[-1]
-    padding_id = params.get("padding_id", 0)
 
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(inputs, padding_id)),
