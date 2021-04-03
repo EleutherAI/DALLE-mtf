@@ -202,7 +202,40 @@ class DALLE:
                 x = mtf.dropout(x, rate=embed_dropout, name="wte_dropout")
         return x
 
-    def positional_embedding(self, x, name):
+    def axial_positional_embedding(self, x, name):
+        mesh = x.mesh
+
+        with tf.variable_scope(name):
+            axial_dim_side = int(sqrt(self.image_seq_len))
+
+            embd_dim = self.dimensions["embed_dim"]
+            axial_dim = mtf.Dimension("axial_dim", self.image_seq_len)
+
+            dim_axials = [mtf.Dimension(f"axial_dim_{i}", t) for i, t in enumerate((axial_dim_side, axial_dim_side))]
+
+            axial_wpe_1 = mtf.get_variable(mesh, "axial_wpe_1", mtf.Shape([dim_axials[0], embd_dim]),
+                                           initializer=tf.random_normal_initializer(stddev=0.01),
+                                           master_dtype=self.variable_dtype.master_dtype,
+                                           slice_dtype=self.variable_dtype.slice_dtype,
+                                           activation_dtype=self.variable_dtype.activation_dtype)
+
+            axial_wpe_2 = mtf.get_variable(mesh, "axial_wpe_2", mtf.Shape([dim_axials[1], embd_dim]),
+                                           initializer=tf.random_normal_initializer(stddev=0.01),
+                                           master_dtype=self.variable_dtype.master_dtype,
+                                           slice_dtype=self.variable_dtype.slice_dtype,
+                                           activation_dtype=self.variable_dtype.activation_dtype)
+
+            axial_wpe_1, axial_wpe_2 = map(lambda t: mtf.broadcast(t, [dim_axials[0], dim_axials[1], embd_dim]),
+                                           (axial_wpe_1, axial_wpe_2))
+            wpe = (axial_wpe_1 + axial_wpe_2) / 2
+
+            wpe = mtf.reshape(wpe, [axial_dim, embd_dim])
+            wpe = pad(wpe, [self.text_seq_len, 0], axial_dim.name)
+            wpe = mtf.replace_dimensions(wpe, wpe.shape[0], self.dimensions["embed_seq_dim"])
+            return wpe
+
+
+    def absolute_positional_embedding(self, x, name):
         with tf.variable_scope(name):
             # Positional embedding
             wpe = mtf.get_variable(x.mesh, "wpe",
@@ -211,14 +244,17 @@ class DALLE:
                                    master_dtype=self.variable_dtype.master_dtype,
                                    slice_dtype=self.variable_dtype.slice_dtype,
                                    activation_dtype=self.variable_dtype.activation_dtype)
-            position_indices = mtf.range(x.mesh, self.dimensions["total_seq_dim"], tf.int64) if not \
-                self.is_incremental_inference else (self.context.position - 1)
-            pos_emb = mtf.gather(wpe, position_indices, wpe.shape[0])
-            embed_dropout = self.params.get("embed_dropout", 0)
-            if embed_dropout > 0 and self.mode == "train":
-                pos_emb = mtf.dropout(pos_emb, rate=embed_dropout, name="wte_dropout")
-            x += pos_emb
-            return x
+            return wpe
+
+    def apply_positional_embedding(self, x, wpe):
+        position_indices = mtf.range(x.mesh, self.dimensions["total_seq_dim"], tf.int64) if not \
+            self.is_incremental_inference else (self.context.position - 1)
+        pos_emb = mtf.gather(wpe, position_indices, wpe.shape[0])
+        embed_dropout = self.params.get("embed_dropout", 0)
+        if embed_dropout > 0 and self.mode == "train":
+            pos_emb = mtf.dropout(pos_emb, rate=embed_dropout, name="wte_dropout")
+        x += pos_emb
+        return x
 
     def get_attn_mask(self, mesh, nd, ns):
         if not exists(self.attn_mask):
@@ -419,7 +455,13 @@ class DALLE:
 
         # embed text and image tokens jointly and add positional embeds
 
-        tokens = self.positional_embedding(self.embedding(inputs, "embedding"), "positional_embedding")
+        inputs = self.embedding(inputs, "embedding")
+
+        abs_pos_emb = self.absolute_positional_embedding(inputs, "positional_embedding")
+        axial_pos_emb = self.axial_positional_embedding(inputs, "axial_positional_embedding")
+
+        inputs = self.apply_positional_embedding(inputs, abs_pos_emb)
+        tokens = self.apply_positional_embedding(inputs, axial_pos_emb)
 
         mask = self.get_attn_mask(mesh, orig_inputs.shape[1], self.dimensions["memory_len_dim"])
 
