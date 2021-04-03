@@ -202,9 +202,7 @@ class DALLE:
                 x = mtf.dropout(x, rate=embed_dropout, name="wte_dropout")
         return x
 
-    def axial_positional_embedding(self, x, name):
-        mesh = x.mesh
-
+    def axial_positional_embedding(self, mesh, name):
         with tf.variable_scope(name):
             axial_dim_side = int(sqrt(self.image_seq_len))
 
@@ -235,10 +233,10 @@ class DALLE:
             return wpe
 
 
-    def absolute_positional_embedding(self, x, name):
+    def absolute_positional_embedding(self, mesh, name):
         with tf.variable_scope(name):
             # Positional embedding
-            wpe = mtf.get_variable(x.mesh, "wpe",
+            wpe = mtf.get_variable(mesh, "wpe",
                                    mtf.Shape([self.dimensions["embed_seq_dim"], self.dimensions["embed_dim"]]),
                                    initializer=tf.random_normal_initializer(stddev=0.01),
                                    master_dtype=self.variable_dtype.master_dtype,
@@ -457,8 +455,8 @@ class DALLE:
 
         inputs = self.embedding(inputs, "embedding")
 
-        abs_pos_emb = self.absolute_positional_embedding(inputs, "positional_embedding")
-        axial_pos_emb = self.axial_positional_embedding(inputs, "axial_positional_embedding")
+        abs_pos_emb = self.absolute_positional_embedding(mesh, "positional_embedding")
+        axial_pos_emb = self.axial_positional_embedding(mesh, "axial_positional_embedding")
 
         inputs = self.apply_positional_embedding(inputs, abs_pos_emb)
         tokens = self.apply_positional_embedding(inputs, axial_pos_emb)
