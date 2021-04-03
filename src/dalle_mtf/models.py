@@ -154,10 +154,11 @@ class DALLE:
         self.n_layers = n_layers
         self.n_heads = n_heads
         self.attn_mask = attn_mask
-        self.total_tokens = text_vocab_size + image_vocab_size
+        self.total_tokens = text_vocab_size + text_seq_len + image_vocab_size # (this is the order of the embeddings as well [pad] [text tokens] [text padding tokens] [image tokens])
+
         self.padding_id = 0 if padding_id is None else padding_id
         self.dimensions = {"embed_dim": mtf.Dimension("embed_dim", n_embd),
-                           "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size),
+                           "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size + text_seq_len),
                            "image_vocab_dim": mtf.Dimension("vocab_dim", image_vocab_size),
                            "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
                            "total_seq_dim": mtf.Dimension("total_seq_dim", self.total_seq_dim),
@@ -184,6 +185,12 @@ class DALLE:
         if params is None:  # extra params
             params = {}
         self.params = defaultdict(lambda: None, params)
+
+    def shift_image_tokens(self, image_tokens):
+        return image_tokens + self.text_seq_len + self.text_vocab_dim
+
+    def unshift_image_tokens(self, image_tokens):
+        return image_tokens - (self.text_seq_len + self.text_vocab_dim)
 
     def embedding(self, x, name):
         embd_dim = self.dimensions["embed_dim"]
@@ -438,9 +445,21 @@ class DALLE:
 
     def forward(self, features, return_loss=True, return_logits=False):
         inputs = features["tokens"]
+        mesh = inputs.mesh
+
+        # make sure all padding gets turned into unique padding tokens
+
+        input_range = mtf.range(mesh, self.dimensions['total_seq_dim'], tf.int32)
+
+        pad_mask = mtf.logical_and(mtf.less(input_range, self.text_seq_len), mtf.equal(inputs, 0))   # only mask in the positions less than text sequence length, and where the input is 0
+        pad_token_ids = input_range + self.text_seq_len  # shift to the range of pad token ids, which come after text token ids, and before image token ids
+
+        inputs = mtf.where(pad_mask, pad_token_ids, inputs)
+
+        # save original inputs to be used as labels
+
         orig_inputs = inputs
 
-        mesh = inputs.mesh
 
         if self.is_incremental_inference:
             # reshape inputs if in inference mode
@@ -448,7 +467,7 @@ class DALLE:
             inputs = mtf.reshape(inputs, [self.dimensions['batch_dim']])
         else:
             # add a <bos> to the inputs, and then remove the last token
-            inputs = pad(inputs, [1, 0], dim_name = inputs.shape[1].name, pad_value = 0.)
+            inputs = pad(inputs, [1, 0], dim_name = inputs.shape[1].name, pad_value = self.padding_id)
             inputs = mtf.slice(inputs, begin = 1, size = (inputs.shape[1].size - 1), slice_dim_name = inputs.shape[1].name)
 
         # embed text and image tokens jointly and add positional embeds

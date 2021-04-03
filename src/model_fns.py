@@ -120,7 +120,7 @@ def dalle_model_fn(features, labels, mode, params):
             if x is not None:
                 if key == "text_inputs":
                     text_tokens = tf.reshape(x, [batch_size, params["text_seq_len"]])
-                    x = tf.concat((text_tokens, img_tokens_reshaped + model.text_vocab_size), axis=1)
+                    x = tf.concat((text_tokens, model.shift_image_tokens(img_tokens_reshaped)), axis=1)
                     mtf_shape = mtf.Shape([model.dimensions["batch_dim"], model.dimensions["total_seq_dim"]])
 
                     mtf_features["tokens"] = mtf.import_fully_replicated(mesh, x, mtf_shape, name=key)
@@ -171,7 +171,7 @@ def dalle_model_fn(features, labels, mode, params):
 
         initialize_vae_weights(vae_checkpoint_path)
 
-        img_outputs = outputs[:, -model.image_seq_len:] - model.text_vocab_size
+        img_outputs = model.unshift_image_tokens(outputs[:, -model.image_seq_len:])
 
         with tf.variable_scope('vae'):
             predictions_decoded = vae.decode(img_outputs)
