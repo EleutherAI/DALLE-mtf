@@ -22,7 +22,6 @@ def sample_autoregressive(inputs,
 
     If there are no partial sequences (you want to sample from the beginning),
     then pass partial_sequences=mtf.zeros(mesh, shape, dtype=tf.int32) and
-    has_partial_sequences=False (so we can skip computation).
 
     Args:
         inputs: an input dictionary containing 'text_inputs' and 'image_inputs',
@@ -124,7 +123,7 @@ def sample_autoregressive(inputs,
         model.is_incremental_inference = True if cached else False
         model.context = context
         with tf.variable_scope("dall-e", reuse=tf.AUTO_REUSE):
-            logits = model.forward({'image_inputs': image_inputs}, return_loss=False, return_logits=True)
+            logits = model.forward({'image_inputs': image_inputs, 'text_inputs': (text_inputs if not cached else None)}, return_loss=False, return_logits=True)
 
         # By default, do top_k sampling of 0.9
         if sampling_keep_top_k == -2:
@@ -147,16 +146,16 @@ def sample_autoregressive(inputs,
         if cached:
             ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
         else:
-            print('*' * 100, '\nIDS THIS STEP SLOW')
-            ids_this_step = mtf.shift(ids_this_step, offset=1, dim=length_dim, wrap=False)
-            print('*' * 100)
+            ids_this_step = mtf.shift(ids_this_step, offset=1, dim=image_seq_dim, wrap=False)
 
         one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
         one_new_id = ids_this_step * one_hot
         new_ids = (1 - one_hot) * ids + one_new_id
         new_position = position + 1
         ret = [new_position, new_ids]
-        ret += context.new_states
+
+        if cached:
+            ret += context.new_states
         return ret
 
     while_loop_inputs = [initial_position, image_inputs] + initial_states
