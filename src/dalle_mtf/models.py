@@ -424,7 +424,7 @@ class DALLE:
             return x
 
     def to_image_logits(self, x):
-        with tf.variable_scope("to_logits"):
+        with tf.variable_scope("to_image_logits"):
             if not self.is_incremental_inference:
                 x = mtf.slice(x, begin = self.text_seq_len, size = self.image_seq_len, slice_dim_name = x.shape[1].name)
 
@@ -435,7 +435,7 @@ class DALLE:
             return image_logits
 
     def to_text_logits(self, x):
-        with tf.variable_scope("to_logits"):
+        with tf.variable_scope("to_text_logits"):
             text_tokens = mtf.slice(x, begin = 0, size = self.text_seq_len, slice_dim_name = x.shape[1].name)
             text_logits = self.linear(text_tokens, self.dimensions["text_vocab_dim"], name="linear_text_out")
 
