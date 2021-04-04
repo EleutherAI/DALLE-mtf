@@ -59,7 +59,7 @@ def sample_autoregressive(inputs,
     # Gets position (in image inputs) where zero padding starts
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
-        reduced_dim=image_seq_dim) 
+        reduced_dim=image_seq_dim)
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
 
@@ -163,7 +163,9 @@ def sample_autoregressive(inputs,
         if cached:
             ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
         else:
+            print('*' * 100, '\nIDS THIS STEP SLOW')
             ids_this_step = mtf.shift(ids_this_step, offset=1, dim=length_dim, wrap=False)
+            print('*' * 100)
 
         one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
         one_new_id = ids_this_step * one_hot
