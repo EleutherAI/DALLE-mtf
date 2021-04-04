@@ -187,10 +187,10 @@ class DALLE:
         self.params = defaultdict(lambda: None, params)
 
     def shift_image_tokens(self, image_tokens):
-        return image_tokens + self.text_seq_len + self.text_vocab_dim
+        return image_tokens + self.text_seq_len + self.dimensions['text_vocab_dim']
 
     def unshift_image_tokens(self, image_tokens):
-        return image_tokens - (self.text_seq_len + self.text_vocab_dim)
+        return image_tokens - (self.text_seq_len + self.dimensions['text_vocab_dim'])
 
     def embedding(self, x, name):
         embd_dim = self.dimensions["embed_dim"]
