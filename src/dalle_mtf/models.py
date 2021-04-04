@@ -143,7 +143,7 @@ class DALLE:
     def __init__(self, mesh, n_embd, text_vocab_size=12800, image_vocab_size=512, text_seq_len=256, image_seq_len=1024,
                  n_layers=6, n_heads=8, batch_size=32, bf_16=True, attn_mask=None, mode="train",
                  is_incremental_inference=False, context=None, loss_fn=None, params=None, padding_id=None,
-                 activation_fn=None):
+                 activation_fn=None, text_loss_weight=0.15):
 
         self.mesh = mesh
         self.n_embd = n_embd
@@ -156,6 +156,7 @@ class DALLE:
         self.n_heads = n_heads
         self.attn_mask = attn_mask
         self.logits_mask = None
+        self.text_loss_weight = text_loss_weight
         self.total_tokens = text_vocab_size + image_vocab_size + 1  # extra for EOS
         self.padding_id = 0 if padding_id is None else padding_id
         self.dimensions = {"embed_dim": mtf.Dimension("embed_dim", n_embd),
@@ -475,7 +476,25 @@ class DALLE:
             # Go to full precision for the logits
             text_logits = mtf.cast(text_logits, tf.float32)
             return text_logits
-    
+
+    def _loss(self, text_logits, image_logits, text_labels, image_labels):
+        with tf.variable_scope("loss_final"):
+            text_loss_batch = self.loss_fn(logits=text_logits, targets=text_labels,
+                                      vocab_dim=text_logits.shape[-1], z_loss=0.0)
+
+            image_loss_batch = self.loss_fn(logits=image_logits, targets=image_labels,
+                                      vocab_dim=image_logits.shape[-1], z_loss=0.0)
+
+            loss_batch = text_loss_batch * self.text_loss_weight + image_loss_batch
+
+        with tf.variable_scope("reduce_mean_final"):
+            loss = mtf.reduce_mean(loss_batch)
+
+        loss /= self.params.get("num_microbatches", 1)
+        # Convert to train dtype
+        loss = mtf.cast(loss, self.variable_dtype.slice_dtype)
+        return loss, loss_batch  # loss batch must be returned for metric fns
+
     def forward(self, features, return_loss=True, return_logits=False):
         if features.get('text_inputs') is not None:
             text = features["text_inputs"]
@@ -511,19 +530,25 @@ class DALLE:
 
         # to logits
 
-        logits = self.to_logits(out)
+        image_logits = self.to_image_logits(out)
 
         if not return_loss:
-            logits = mtf.cast(logits, self.variable_dtype.master_dtype)
+            logits = mtf.cast(image_logits, self.variable_dtype.master_dtype)
             return logits
 
         assert exists(image), 'when training, image must be supplied'
         offset_image = image + self.text_vocab_size
         labels = mtf.concat([text, offset_image], concat_dim_name="sequence_dim")
 
-        loss, loss_batch = self._loss(logits, labels)
+        text_logits = self.to_text_logits(out)
+
+        text_labels = mtf.slice(labels, begin = 0, size = self.text_seq_len, slice_dim_name = labels.shape[1].name)
+        image_labels = mtf.slice(labels, begin = self.text_seq_len, size = self.image_seq_len, slice_dim_name = labels.shape[1].name)
+
+        loss, loss_batch = self._loss(text_logits, image_logits, text_labels, image_labels)
+
         if return_logits and return_loss:
             # Cast back to checkpoint dtype
-            logits = mtf.cast(logits, self.variable_dtype.master_dtype)
+            logits = mtf.cast(image_logits, self.variable_dtype.master_dtype)
             return loss, loss_batch, logits
         return loss, loss_batch
