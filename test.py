@@ -73,7 +73,7 @@ def test_sampling():
     sequence_dim = model.dimensions["total_seq_dim"]
 
     text_inputs = mtf.ones(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
-    image_inputs = mtf.ones(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
+    image_inputs = mtf.zeros(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
 
     inputs = {
         'text_inputs': mtf.slice(text_inputs, 0, model.text_seq_len, sequence_dim.name),
@@ -87,7 +87,6 @@ def test_sampling():
             variable_dtype=mtf.VariableDType(),
             max_steps = sequence_dim.size,
             remove_partial_sequences=False,
-            stop_at_token=None,
             min_start_pos=model.text_seq_len
         )
 

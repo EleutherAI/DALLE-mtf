@@ -153,8 +153,6 @@ def dalle_model_fn(features, labels, mode, params):
         # Set up the model for prediction
         mtf_samples = sample_autoregressive(mtf_features,
                                             model,
-                                            params,
-                                            stop_at_token=None,
                                             max_steps=model.total_seq_len,
                                             temperature=0.9,
                                             variable_dtype=model.variable_dtype,
