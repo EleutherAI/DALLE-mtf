@@ -65,7 +65,8 @@ def test_sampling():
         image_seq_len = 4,
         n_embd = 16,
         n_heads = 2,
-        bf_16 = False
+        bf_16 = False,
+        unique_pad_tokens = True
     )
 
     batch_dim = model.dimensions["batch_dim"]

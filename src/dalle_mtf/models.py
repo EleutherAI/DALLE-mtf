@@ -143,11 +143,12 @@ class DALLE:
     def __init__(self, mesh, n_embd, text_vocab_size=12800, image_vocab_size=512, text_seq_len=256, image_seq_len=1024,
                  n_layers=6, n_heads=8, batch_size=32, bf_16=True, attn_mask=None, mode="train",
                  is_incremental_inference=False, context=None, loss_fn=None, params=None, padding_id=None,
-                 activation_fn=None, text_loss_weight=0.15):
+                 activation_fn=None, text_loss_weight=0.15, unique_pad_tokens = False):
 
         self.mesh = mesh
         self.n_embd = n_embd
-        self.text_vocab_size = text_vocab_size
+        self.unique_pad_tokens = unique_pad_tokens
+        self.text_vocab_size = text_vocab_size + (0 if not unique_pad_tokens else text_seq_len)
         self.image_vocab_size = image_vocab_size
         self.text_seq_len = text_seq_len
         self.image_seq_len = image_seq_len
@@ -156,13 +157,12 @@ class DALLE:
         self.n_heads = n_heads
         self.attn_mask = attn_mask
         self.logits_mask = None
+
         self.text_loss_weight = text_loss_weight
-        self.total_tokens = text_vocab_size + image_vocab_size + 1  # extra for EOS
         self.padding_id = 0 if padding_id is None else padding_id
         self.dimensions = {"embed_dim": mtf.Dimension("embed_dim", n_embd),
                            "text_vocab_dim": mtf.Dimension("vocab_dim", text_vocab_size),
                            "image_vocab_dim": mtf.Dimension("vocab_dim", image_vocab_size),
-                           "final_vocab_dim": mtf.Dimension("vocab_dim", self.total_tokens),
                            "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
                            "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
                            "total_seq_dim": mtf.Dimension("sequence_dim", self.total_seq_len),
@@ -498,6 +498,13 @@ class DALLE:
     def forward(self, features, return_loss=True, return_logits=False):
         if features.get('text_inputs') is not None:
             text = features["text_inputs"]
+
+            if self.unique_pad_tokens:
+                input_range = mtf.range(text.mesh, text.shape[1], tf.int32)
+                pad_mask = mtf.equal(text, 0)
+                pad_token_ids = input_range + self.text_seq_len  # shift to the range of pad token ids, which come after text token ids, and before image token ids
+                text = mtf.where(pad_mask, pad_token_ids, text)
+
             text_with_bos = pad(text, [1, 0], dim_name = text.shape[1].name, pad_value = self.padding_id)
             text_emb = self.embedding(text_with_bos, "text_embd")
         else:
