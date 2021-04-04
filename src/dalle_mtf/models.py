@@ -537,8 +537,7 @@ class DALLE:
             return logits
 
         assert exists(image), 'when training, image must be supplied'
-        offset_image = image + self.text_vocab_size
-        labels = mtf.concat([text, offset_image], concat_dim_name="sequence_dim")
+        labels = mtf.concat([text, image], concat_dim_name="sequence_dim")
 
         text_logits = self.to_text_logits(out)
 
