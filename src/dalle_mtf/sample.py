@@ -13,7 +13,7 @@ def sample_autoregressive(inputs,
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
-                          cached=True
+                          cached=True,
                           min_start_pos=None
                           ):
     """Sample randomly one token at a time.
