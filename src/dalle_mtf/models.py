@@ -468,7 +468,7 @@ class DALLE:
         else:
             # add a <bos> to the inputs, and then remove the last token
             inputs = pad(inputs, [1, 0], dim_name = inputs.shape[1].name, pad_value = self.padding_id)
-            inputs = mtf.slice(inputs, begin = 1, size = self.total_seq_dim, slice_dim_name = inputs.shape[1].name)
+            inputs = mtf.slice(inputs, begin = 0, size = self.total_seq_dim, slice_dim_name = inputs.shape[1].name)
 
         # embed text and image tokens jointly and add positional embeds
 
