@@ -5,15 +5,16 @@ import mesh_tensorflow.transformer as mtf_transformer
 
 def sample_autoregressive(inputs,
                           model,
-                          params,
                           stop_at_token=50256,
                           max_steps=None,
                           temperature=0.9,
+                          padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
                           cached=True
+                          min_start_pos=None
                           ):
     """Sample randomly one token at a time.
 
@@ -29,7 +30,6 @@ def sample_autoregressive(inputs,
     Args:
         inputs: an input dictionary containing 'text_inputs' and 'image_inputs',
         model: DALL-E model
-        params: model paramers.
         stop_at_token: an optional integer eos id.  Stop when we produce it.
         max_steps: an optional integer, the max number of steps to decode.
         temperature: an optional floating point value between 0.0 and 1.0 0.0
@@ -52,7 +52,7 @@ def sample_autoregressive(inputs,
     batch_dims = model.dimensions["batch_dim"]
     length_dim = model.dimensions["total_seq_dim"]
     image_seq_dim = model.dimensions['image_sequence_dim']
-    padding_id = params.get("padding_id", 0)
+
     image_inputs = inputs['image_inputs']
     text_inputs = inputs['text_inputs']
 
@@ -60,6 +60,13 @@ def sample_autoregressive(inputs,
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
         reduced_dim=image_seq_dim)
+
+    if min_start_pos is not None:
+        # force the sampling to never start below a minimum starting position, say the text length.
+        # this will also be useful for image completion, where you can start sampling from half the image tokens
+        initial_position = mtf.maximum(initial_position, min_start_pos)
+
+    # initial_position += model.dimensions['text_seq_dim'].size
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
 
@@ -151,13 +158,13 @@ def sample_autoregressive(inputs,
                 raise ValueError("sampling_keep_top_k must either be -1 or positive.")
             k_largest = mtf.nth_largest_element(
                 logits, n=sampling_keep_top_k,
-                reduced_dim=model.dimensions['final_vocab_dim'])
+                reduced_dim=model.dimensions['image_vocab_dim'])
             logits = mtf.where(mtf.less_equal(logits, k_largest),
                                mtf.ones_like(logits) * -1e6, logits)
 
         # temperature sampling
         ids_this_step = mtf.sample_with_temperature(
-            logits, model.dimensions['final_vocab_dim'], temperature)
+            logits, model.dimensions['image_vocab_dim'], temperature)
 
         # reshape & assign results
         if cached:
