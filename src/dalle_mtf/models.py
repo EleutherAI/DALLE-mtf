@@ -238,13 +238,6 @@ class DALLE:
             i, j = map(lambda t: mtf.broadcast(t, [nd, ns]), (i, j))
             self.attn_mask = mtf.cast(mtf.less(i, j), self.variable_dtype.activation_dtype) * -1e10
         return self.attn_mask
-    
-    def set_logits_mask(self, tf_mask):
-        mask_shape = mtf.Shape([self.dimensions['total_seq_dim'], self.dimensions['final_vocab_dim']])
-        mtf_mask = mtf.import_fully_replicated(self.mesh, tf_mask, mask_shape)
-        new_shape = mtf.Shape([self.dimensions['batch_dim'], self.dimensions['total_seq_dim'], self.dimensions['final_vocab_dim']])
-        mtf_mask = mtf.broadcast(mtf_mask, new_shape)
-        self.logits_mask = mtf_mask
 
     def attention(self, x, n_state, mask, attention_type="global", name="attn"):
         if not self.is_incremental_inference:

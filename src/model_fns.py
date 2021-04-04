@@ -11,20 +11,6 @@ from .dalle_mtf.ops import mask_to_bias
 from tensorflow.python.ops import resources
 import numpy as np
 
-def get_tf_logits_mask(num_text_tokens, total_tokens, text_seq_len, image_seq_len): 
-    seq_len = text_seq_len + image_seq_len
-
-    seq_range = np.arange(seq_len).reshape((1,-1,1))
-    logits_range = np.arange(total_tokens).reshape((1,1,-1))
-
-    logits_mask = (((seq_range >= (text_seq_len - 1)) & (logits_range < num_text_tokens)) | 
-                   ((seq_range < (text_seq_len - 1)) & (logits_range >= num_text_tokens)) | 
-                   ((seq_range != (seq_len - 1)) & (logits_range >= (total_tokens - 1))) )
-    logits_mask = np.squeeze(logits_mask)
-    logits_mask = logits_mask * -1e9
-    logits_mask = logits_mask.astype(np.float32)
-    return tf.constant(logits_mask)
-
 def initialize_vae_weights(checkpoint_path, scope="vae"):
     """
     Initialize the vae model from the checkpoint.
@@ -126,10 +112,6 @@ def dalle_model_fn(features, labels, mode, params):
         mode=mode_str,
         params=params,
     )
-
-    tf_logits_mask = get_tf_logits_mask(params["text_vocab_size"], model.total_tokens, 
-                                        params["text_seq_len"], params['image_seq_len'])
-    model.set_logits_mask(tf_logits_mask)
 
     if mode in [tf.estimator.ModeKeys.TRAIN, tf.estimator.ModeKeys.EVAL]:
         # Build mtf_features & seq length dict for getting number of microbatches
