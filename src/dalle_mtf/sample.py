@@ -13,6 +13,7 @@ def sample_autoregressive(inputs,
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
+                          cached=True
                           ):
     """Sample randomly one token at a time.
 
@@ -59,37 +60,38 @@ def sample_autoregressive(inputs,
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
         reduced_dim=image_seq_dim) 
-    # initial_position += model.dimensions['text_seq_dim'].size
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
 
     # Builds context to pass around internally
     # The 'first part' context records initial states of k / v / x
+    if cached:
+        context_first_part = mtf_transformer.transformer.Context(
+            model=None,
+            mesh=image_inputs.mesh,
+            batch_dims=batch_dims,
+            length_dim=image_seq_dim,
+            variable_dtype=variable_dtype,
+            mode="first_part",
+            position=length_range,
+            position_is_default=True,
+            new_states=[],
+            initial_position=initial_position,
+            sequence_id=None,
+            constant_states=[],
+            inputs=inputs)
+        model.context = context_first_part
 
-    context_first_part = mtf_transformer.transformer.Context(
-        model=None,
-        mesh=image_inputs.mesh,
-        batch_dims=batch_dims,
-        length_dim=image_seq_dim,
-        variable_dtype=variable_dtype,
-        mode="first_part",
-        position=length_range,
-        position_is_default=True,
-        new_states=[],
-        initial_position=initial_position,
-        sequence_id=None,
-        constant_states=[],
-        inputs=inputs)
-    model.context = context_first_part
+        with tf.variable_scope('dall-e'):
+            logits = model.forward(inputs, return_loss=False, return_logits=True)
+        del logits
 
-    with tf.variable_scope('dall-e'):
-        logits = model.forward(inputs, return_loss=False, return_logits=True)
-    del logits
-
-    if not has_partial_sequences:
-        initial_states = [mtf.zeros_like(t) for t in context_first_part.new_states]
+        if not has_partial_sequences:
+            initial_states = [mtf.zeros_like(t) for t in context_first_part.new_states]
+        else:
+            initial_states = context_first_part.new_states
     else:
-        initial_states = context_first_part.new_states
+        initial_states = []
 
     if not has_partial_sequences:
         partial_sequences_eos_count = 0
@@ -133,9 +135,9 @@ def sample_autoregressive(inputs,
             new_states=[],
             initial_position=position,
             sequence_id=None,
-            inputs=ids)
+            inputs=ids) if cached else None
 
-        model.is_incremental_inference = True
+        model.is_incremental_inference = True if cached else False
         model.context = context
         with tf.variable_scope("dall-e", reuse=tf.AUTO_REUSE):
             logits = model.forward({'image_inputs': image_inputs}, return_loss=False, return_logits=True)
@@ -156,8 +158,13 @@ def sample_autoregressive(inputs,
         # temperature sampling
         ids_this_step = mtf.sample_with_temperature(
             logits, model.dimensions['final_vocab_dim'], temperature)
+
         # reshape & assign results
-        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+        if cached:
+            ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+        else:
+            ids_this_step = mtf.shift(ids_this_step, offset=1, dim=length_dim, wrap=False)
+
         one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
         one_new_id = ids_this_step * one_hot
         new_ids = (1 - one_hot) * ids + one_new_id
