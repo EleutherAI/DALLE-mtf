@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument("--new", action="store_true", help="If set, deletes previous checkpoint, if it exists, and "
                                                            "starts a new training run")
     parser.add_argument('--predict', action='store_true', help='run model in predict mode')
-    parser.add_argument('--prompt', type=str, default='a cat in a hat')
+    parser.add_argument('--prompt', type=str, default='face')
     args = parser.parse_args()
     assert args.model is not None, "Model must be set"
     return args
@@ -93,14 +93,15 @@ def main():
     if has_predict_or_eval_steps:
         # Eval and train - stop and predict and/or eval every checkpoint
         while current_step < params["train_steps"]:
-            next_checkpoint = min(current_step + args.steps_per_checkpoint, params["train_steps"])
+            next_checkpoint = min(current_step + params["steps_per_checkpoint"], params["train_steps"])
             estimator.train(input_fn=partial(dalle_input_fn, eval=False),
                             max_steps=next_checkpoint)
             current_step = next_checkpoint
             if params["predict_steps"] > 0:
                 raise NotImplementedError
             if params["eval_steps"] > 0:
-                raise NotImplementedError
+                estimator.evaluate(input_fn=partial(dalle_input_fn, eval=True),
+                            steps=params["eval_steps"])
         return
     else:
         # Else, just train
@@ -108,6 +109,7 @@ def main():
             # Else, don't stop and restart
             estimator.train(input_fn=partial(dalle_input_fn, eval=False),
                             max_steps=params["train_steps"])
+
 
 
 if __name__ == "__main__":
