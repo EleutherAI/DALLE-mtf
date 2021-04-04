@@ -380,8 +380,8 @@ class DALLE:
             text_loss_batch = self.loss_fn(logits=text_logits, targets=text_labels,
                                       vocab_dim=text_logits.shape[-1], z_loss=0.0)
 
-            image_loss_batch = self.loss_fn(logits=text_logits, targets=text_labels,
-                                      vocab_dim=text_logits.shape[-1], z_loss=0.0)
+            image_loss_batch = self.loss_fn(logits=image_logits, targets=image_labels,
+                                      vocab_dim=image_logits.shape[-1], z_loss=0.0)
 
             loss_batch = text_loss_batch * self.text_loss_weight + image_loss_batch
 
@@ -468,7 +468,7 @@ class DALLE:
         else:
             # add a <bos> to the inputs, and then remove the last token
             inputs = pad(inputs, [1, 0], dim_name = inputs.shape[1].name, pad_value = self.padding_id)
-            inputs = mtf.slice(inputs, begin = 1, size = (inputs.shape[1].size - 1), slice_dim_name = inputs.shape[1].name)
+            inputs = mtf.slice(inputs, begin = 1, size = self.total_seq_dim, slice_dim_name = inputs.shape[1].name)
 
         # embed text and image tokens jointly and add positional embeds
 
