@@ -156,8 +156,6 @@ def dalle_model_fn(features, labels, mode, params):
                                             max_steps=model.total_seq_len,
                                             temperature=0.9,
                                             variable_dtype=model.variable_dtype,
-                                            has_partial_sequences=True,
-                                            remove_partial_sequences=True,
                                             sampling_keep_top_k=-2,
                                             )
 

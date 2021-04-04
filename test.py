@@ -86,7 +86,6 @@ def test_sampling():
             model,
             variable_dtype=mtf.VariableDType(),
             max_steps = sequence_dim.size,
-            remove_partial_sequences=False,
             min_start_pos=model.text_seq_len
         )
 

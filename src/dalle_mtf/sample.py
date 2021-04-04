@@ -9,8 +9,6 @@ def sample_autoregressive(inputs,
                           temperature=0.9,
                           padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
-                          has_partial_sequences=True,
-                          remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
                           cached=True,
                           min_start_pos=None
@@ -34,10 +32,7 @@ def sample_autoregressive(inputs,
         temperature: an optional floating point value between 0.0 and 1.0 0.0
         means argmax, 1.0 means sample according to predicted distribution.
         variable_dtype: a mtf.VariableDType
-        has_partial_sequences: a boolean
         decoding, one per each input layer + the embedding layer
-        remove_partial_sequences: a boolean - whether to remove the partial
-        sequences from the output
         sampling_keep_top_k: an integer - if not -1, only sample from the top k
         logits.
 
@@ -92,15 +87,9 @@ def sample_autoregressive(inputs,
             logits = model.forward(inputs, return_loss=False, return_logits=True)
         del logits
 
-        if not has_partial_sequences:
-            initial_states = [mtf.zeros_like(t) for t in context_first_part.new_states]
-        else:
-            initial_states = context_first_part.new_states
+        initial_states = context_first_part.new_states
     else:
         initial_states = []
-
-    if not has_partial_sequences:
-        partial_sequences_eos_count = 0
 
     def cond_fn(position, ids, *unused_states):
         """Should we run another loop iteration?"""
@@ -174,11 +163,4 @@ def sample_autoregressive(inputs,
     final_position, outputs = mtf.while_loop(
         cond_fn, body_fn, while_loop_inputs)[:2]
     del final_position
-    # if has_partial_sequences and remove_partial_sequences:
-    #     # Remove partial sequences from outputs
-    #     partial_length = mtf.reduce_sum(
-    #         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
-    #         reduced_dim=image_seq_dim)
-    #     outputs = mtf.dynamic_shift(
-    #         outputs, -partial_length, image_seq_dim, wrap=False)
     return outputs
