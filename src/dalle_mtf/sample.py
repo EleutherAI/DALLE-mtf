@@ -63,6 +63,39 @@ def sample_autoregressive(inputs,
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
 
+    # one step of sampling fn
+
+    def sample_step(logits, ids, position, incremental):
+        nonlocal sampling_keep_top_k
+        # By default, do top_k sampling of 0.9
+        if sampling_keep_top_k == -2:
+            sampling_keep_top_k = int(logits.shape[-1].size * 0.1)
+
+        if sampling_keep_top_k != -1:
+            if sampling_keep_top_k <= 0:
+                raise ValueError("sampling_keep_top_k must either be -1 or positive.")
+            k_largest = mtf.nth_largest_element(
+                logits, n=sampling_keep_top_k,
+                reduced_dim=model.dimensions['image_vocab_dim'])
+            logits = mtf.where(mtf.less_equal(logits, k_largest),
+                               mtf.ones_like(logits) * -1e6, logits)
+
+        # temperature sampling
+        ids_this_step = mtf.sample_with_temperature(
+            logits, model.dimensions['image_vocab_dim'], temperature)
+
+        # reshape & assign results
+        if incremental:
+            ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+        else:
+            ids_this_step = mtf.shift(ids_this_step, offset=1, dim=image_seq_dim, wrap=False)
+
+        one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
+        one_new_id = ids_this_step * one_hot
+        new_ids = (1 - one_hot) * ids + one_new_id
+        new_position = position + 1
+        return [new_position, new_ids]
+
     # Builds context to pass around internally
     # The 'first part' context records initial states of k / v / x
     if cached:
@@ -84,9 +117,14 @@ def sample_autoregressive(inputs,
 
         with tf.variable_scope('dall-e'):
             logits = model.forward(inputs, return_loss=False, return_logits=True)
-        del logits
 
         initial_states = context_first_part.new_states
+
+        # sample one step to get first image token and then delete logits
+
+        initial_position, image_inputs = sample_step(logits, image_inputs, initial_position, incremental = False)
+
+        del logits
     else:
         initial_states = []
 
@@ -103,7 +141,6 @@ def sample_autoregressive(inputs,
 
     def body_fn(position, ids, *states):
         """One step in the decode loop."""
-        nonlocal sampling_keep_top_k
 
         context = mtf_transformer.transformer.Context(
             model=None,
@@ -125,34 +162,7 @@ def sample_autoregressive(inputs,
         with tf.variable_scope("dall-e", reuse=tf.AUTO_REUSE):
             logits = model.forward({'image_inputs': image_inputs, 'text_inputs': (text_inputs if not cached else None)}, return_loss=False, return_logits=True)
 
-        # By default, do top_k sampling of 0.9
-        if sampling_keep_top_k == -2:
-            sampling_keep_top_k = int(logits.shape[-1].size * 0.1)
-
-        if sampling_keep_top_k != -1:
-            if sampling_keep_top_k <= 0:
-                raise ValueError("sampling_keep_top_k must either be -1 or positive.")
-            k_largest = mtf.nth_largest_element(
-                logits, n=sampling_keep_top_k,
-                reduced_dim=model.dimensions['image_vocab_dim'])
-            logits = mtf.where(mtf.less_equal(logits, k_largest),
-                               mtf.ones_like(logits) * -1e6, logits)
-
-        # temperature sampling
-        ids_this_step = mtf.sample_with_temperature(
-            logits, model.dimensions['image_vocab_dim'], temperature)
-
-        # reshape & assign results
-        if cached:
-            ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
-        else:
-            ids_this_step = mtf.shift(ids_this_step, offset=1, dim=image_seq_dim, wrap=False)
-
-        one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
-        one_new_id = ids_this_step * one_hot
-        new_ids = (1 - one_hot) * ids + one_new_id
-        new_position = position + 1
-        ret = [new_position, new_ids]
+        ret = sample_step(logits, ids, position, cached)
 
         if cached:
             ret += context.new_states
