@@ -458,8 +458,7 @@ class DALLE:
 
         # save original inputs to be used as labels
 
-        orig_inputs = inputs
-
+        orig_inputs = mtf.slice(inputs, begin = 0, size = self.total_seq_dim, slice_dim_name = inputs.shape[1].name)
 
         if self.is_incremental_inference:
             # reshape inputs if in inference mode

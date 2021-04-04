@@ -50,32 +50,6 @@ def test_model():
         lowering = mtf.Lowering(graph, {mesh: mesh_impl})
         logits = lowering.export_to_tf_tensor(logits)
 
-def test_model_fn():
-    graph = mtf.Graph()
-    mesh = mtf.Mesh(graph, "my_mesh")
-
-    model = DALLE(
-        batch_size = 1,
-        n_embd = 16,
-        n_heads = 2,
-        bf_16 = False
-    )
-
-    batch_dim = model.dimensions["batch_dim"]
-    sequence_dim = model.dimensions["total_seq_dim"]
-
-    features = {
-        'tokens': mtf.ones(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32),
-        'labels': mtf.ones(mesh, mtf.Shape((batch_dim, sequence_dim)), tf.int32)
-    }
-
-    with not_raises(Exception):
-        loss, loss_batch, logits = model.forward(features, return_loss = True, return_logits = True)
-
-        mesh_impl = placement_mesh_impl.PlacementMeshImpl(shape=[], layout={}, devices=[""])
-        lowering = mtf.Lowering(graph, {mesh: mesh_impl})
-        logits = lowering.export_to_tf_tensor(logits)
-
 def test_sampling():
     graph = mtf.Graph()
     mesh = mtf.Mesh(graph, "my_mesh")
