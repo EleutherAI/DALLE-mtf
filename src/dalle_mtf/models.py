@@ -344,6 +344,7 @@ class DALLE:
                 a = mtf.dropout(a, rate=residual_dropout, name="res_dropout")
             return a
 
+
     def mlp(self, x, n_state, name="mlp"):
         residual_dropout = self.params.get("residual_dropout", 0)
         with tf.variable_scope(name):
@@ -479,8 +480,7 @@ class DALLE:
         inputs = self.apply_positional_embedding(inputs, abs_pos_emb)
         tokens = self.apply_positional_embedding(inputs, axial_pos_emb)
 
-        mask = self.get_attn_mask(mesh, orig_inputs.shape[1], self.dimensions["memory_len_dim"])
-
+        mask = self.get_attn_mask(mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
 
         image_logits = self.to_image_logits(out)
