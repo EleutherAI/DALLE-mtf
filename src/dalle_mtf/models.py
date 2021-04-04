@@ -430,12 +430,6 @@ class DALLE:
         mask = self.get_attn_mask(tokens.mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)
         logits = self.to_logits(out)
-        if self.is_incremental_inference:
-            logits_mask = mtf.gather(self.logits_mask, self.context.position + self.text_seq_len - 1, self.logits_mask.shape[1])
-            logits_mask = expand_tile(logits_mask, mtf.Dimension("sequence_dim", 1), axis=1)
-        else:
-            logits_mask = self.logits_mask
-        logits += mtf.cast(logits_mask, logits.dtype)
 
         if not return_loss:
             logits = mtf.cast(logits, self.variable_dtype.master_dtype)

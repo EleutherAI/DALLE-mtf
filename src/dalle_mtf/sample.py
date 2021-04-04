@@ -5,14 +5,15 @@ import mesh_tensorflow.transformer as mtf_transformer
 
 def sample_autoregressive(inputs,
                           model,
-                          params,
                           stop_at_token=50256,
                           max_steps=None,
                           temperature=0.9,
+                          padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
                           remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
+                          min_start_pos=None
                           ):
     """Sample randomly one token at a time.
 
@@ -28,7 +29,6 @@ def sample_autoregressive(inputs,
     Args:
         inputs: an input dictionary containing 'text_inputs' and 'image_inputs',
         model: DALL-E model
-        params: model paramers.
         stop_at_token: an optional integer eos id.  Stop when we produce it.
         max_steps: an optional integer, the max number of steps to decode.
         temperature: an optional floating point value between 0.0 and 1.0 0.0
@@ -51,7 +51,7 @@ def sample_autoregressive(inputs,
     batch_dims = model.dimensions["batch_dim"]
     length_dim = model.dimensions["total_seq_dim"]
     image_seq_dim = model.dimensions['image_sequence_dim']
-    padding_id = params.get("padding_id", 0)
+
     image_inputs = inputs['image_inputs']
     text_inputs = inputs['text_inputs']
 
@@ -59,6 +59,12 @@ def sample_autoregressive(inputs,
     initial_position = mtf.reduce_sum(
         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
         reduced_dim=image_seq_dim) 
+
+    if min_start_pos is not None:
+        # force the sampling to never start below a minimum starting position, say the text length.
+        # this will also be useful for image completion, where you can start sampling from half the image tokens
+        initial_position = mtf.maximum(initial_position, min_start_pos)
+
     # initial_position += model.dimensions['text_seq_dim'].size
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
