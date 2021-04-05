@@ -72,11 +72,7 @@ def test_sampling():
         samples = sample_autoregressive(
             inputs,
             model,
-            variable_dtype=mtf.VariableDType(),
-            max_steps = sequence_dim.size,
-            remove_partial_sequences=False,
-            stop_at_token=None,
-            min_start_pos=model.text_seq_len
+            variable_dtype=mtf.VariableDType()
         )
 
         mesh_impl = placement_mesh_impl.PlacementMeshImpl(shape=[], layout={}, devices=[""])

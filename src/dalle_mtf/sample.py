@@ -5,14 +5,9 @@ import mesh_tensorflow.transformer as mtf_transformer
 
 def sample_autoregressive(inputs,
                           model,
-                          stop_at_token=50256,
-                          max_steps=None,
                           temperature=0.9,
-                          padding_id = 0,
-                          min_start_pos = None,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
-                          remove_partial_sequences=False,
                           sampling_keep_top_k=-1,
                           ):
     """Sample randomly one token at a time.
@@ -87,25 +82,10 @@ def sample_autoregressive(inputs,
     if not has_partial_sequences:
         partial_sequences_eos_count = 0
 
-    if stop_at_token is not None:
-        partial_sequences_eos_count = mtf.reduce_sum(
-            mtf.to_int32(mtf.equal(inputs, stop_at_token)),
-            reduced_dim=length_dim)
-
     def cond_fn(position, ids, *unused_states):
         """Should we run another loop iteration?"""
         past_end = mtf.greater_equal(position, length_dim.size)
-        if max_steps:
-            past_end = mtf.logical_or(
-                past_end, mtf.greater_equal(position - initial_position, max_steps))
-
         is_done = past_end
-        if stop_at_token is not None:
-            eos_count = mtf.reduce_sum(
-                mtf.to_int32(mtf.equal(ids, stop_at_token)),
-                reduced_dim=length_dim)
-            has_additional_eos = mtf.greater(eos_count, partial_sequences_eos_count)
-            is_done = mtf.logical_or(is_done, has_additional_eos)
         all_done = mtf.reduce_all(is_done)
         return mtf.logical_not(all_done)
 
@@ -169,11 +149,4 @@ def sample_autoregressive(inputs,
     final_position, outputs = mtf.while_loop(
         cond_fn, body_fn, while_loop_inputs)[:2]
     del final_position
-    if has_partial_sequences and remove_partial_sequences:
-        # Remove partial sequences from outputs
-        partial_length = mtf.reduce_sum(
-            mtf.to_int32(mtf.not_equal(inputs, padding_id)),
-            reduced_dim=length_dim)
-        outputs = mtf.dynamic_shift(
-            outputs, -partial_length, length_dim, wrap=False)
     return outputs
