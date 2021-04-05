@@ -172,12 +172,10 @@ def dalle_model_fn(features, labels, mode, params):
         mtf_samples = sample_autoregressive(mtf_features,
                                             model,
                                             params,
-                                            stop_at_token=model.eos_token_id,
-                                            max_steps=None,
+                                            max_steps=model.image_seq_len,
                                             temperature=0.9,
                                             variable_dtype=model.variable_dtype,
                                             has_partial_sequences=True,
-                                            remove_partial_sequences=True,
                                             sampling_keep_top_k=-2,
                                             )
 

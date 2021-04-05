@@ -5,15 +5,11 @@ import mesh_tensorflow.transformer as mtf_transformer
 
 def sample_autoregressive(inputs,
                           model,
-                          stop_at_token=50256,
-                          max_steps=None,
                           temperature=0.9,
                           padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           has_partial_sequences=True,
-                          remove_partial_sequences=False,
-                          sampling_keep_top_k=-1,
-                          min_start_pos=None
+                          sampling_keep_top_k=-1
                           ):
     """Sample randomly one token at a time.
 
@@ -36,8 +32,6 @@ def sample_autoregressive(inputs,
         variable_dtype: a mtf.VariableDType
         has_partial_sequences: a boolean
         decoding, one per each input layer + the embedding layer
-        remove_partial_sequences: a boolean - whether to remove the partial
-        sequences from the output
         sampling_keep_top_k: an integer - if not -1, only sample from the top k
         logits.
 
@@ -60,14 +54,47 @@ def sample_autoregressive(inputs,
         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
         reduced_dim=image_seq_dim) 
 
-    if min_start_pos is not None:
-        # force the sampling to never start below a minimum starting position, say the text length.
-        # this will also be useful for image completion, where you can start sampling from half the image tokens
-        initial_position = mtf.maximum(initial_position, min_start_pos)
-
     # initial_position += model.dimensions['text_seq_dim'].size
 
     length_range = mtf.range(image_inputs.mesh, image_seq_dim, tf.int32)
+
+    # add sampling step function, so one does one sampling step outside of body
+
+    def sample_step(logits, ids, position, incremental = True, offset = 0):
+        nonlocal sampling_keep_top_k
+        # By default, do top_k sampling of 0.9
+        if sampling_keep_top_k == -2:
+            sampling_keep_top_k = int(logits.shape[-1].size * 0.1)
+
+        if sampling_keep_top_k != -1:
+            if sampling_keep_top_k <= 0:
+                raise ValueError("sampling_keep_top_k must either be -1 or positive.")
+            k_largest = mtf.nth_largest_element(
+                logits, n=sampling_keep_top_k,
+                reduced_dim=model.dimensions['final_vocab_dim'])
+            logits = mtf.where(mtf.less_equal(logits, k_largest),
+                               mtf.ones_like(logits) * -1e6, logits)
+
+        # temperature sampling
+        ids_this_step = mtf.sample_with_temperature(
+            logits, model.dimensions['final_vocab_dim'], temperature)
+        # reshape & assign results
+
+        if not incremental:
+            ids_this_step = mtf.gather(ids_this_step, position + offset, ids_this_step.shape[1])
+
+        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
+
+        one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
+        one_new_id = ids_this_step * one_hot
+        new_ids = (1 - one_hot) * ids + one_new_id
+        new_position = position + 1
+        ret = [new_position, new_ids]
+        return ret
+
+    # max steps is always image sequence length
+
+    max_steps = model.image_seq_len
 
     # Builds context to pass around internally
     # The 'first part' context records initial states of k / v / x
@@ -90,6 +117,15 @@ def sample_autoregressive(inputs,
 
     with tf.variable_scope('dall-e'):
         logits = model.forward(inputs, return_loss=False, return_logits=True)
+
+    initial_position, image_inputs = sample_step(  # this extra step is needed so the last text token key/values doesn't get cached twice (i think)
+        logits,
+        image_inputs,
+        initial_position,
+        incremental = False,           # the first step must be not incremental, and the function must select the correct logit
+        offset = model.text_seq_len    # the correct logits resides at the initial position (0) + the offset (text_seq_len) [the very last text token] <-- could use an extra mind to double check here, may be off by one
+    )
+
     del logits
 
     if not has_partial_sequences:
@@ -100,25 +136,9 @@ def sample_autoregressive(inputs,
     if not has_partial_sequences:
         partial_sequences_eos_count = 0
 
-    if stop_at_token is not None:
-        partial_sequences_eos_count = mtf.reduce_sum(
-            mtf.to_int32(mtf.equal(image_inputs, stop_at_token)),
-            reduced_dim=image_seq_dim)
-
     def cond_fn(position, ids, *unused_states):
         """Should we run another loop iteration?"""
-        past_end = mtf.greater_equal(position, image_seq_dim.size)
-        if max_steps:
-            past_end = mtf.logical_or(
-                past_end, mtf.greater_equal(position - initial_position, max_steps))
-
-        is_done = past_end
-        if stop_at_token is not None:
-            eos_count = mtf.reduce_sum(
-                mtf.to_int32(mtf.equal(ids, stop_at_token)),
-                reduced_dim=image_seq_dim)
-            has_additional_eos = mtf.greater(eos_count, partial_sequences_eos_count)
-            is_done = mtf.logical_or(is_done, has_additional_eos)
+        is_done = mtf.greater_equal(position, image_seq_dim.size)
         all_done = mtf.reduce_all(is_done)
         return mtf.logical_not(all_done)
 
@@ -146,29 +166,7 @@ def sample_autoregressive(inputs,
         with tf.variable_scope("dall-e", reuse=tf.AUTO_REUSE):
             logits = model.forward({'image_inputs': image_inputs}, return_loss=False, return_logits=True)
 
-        # By default, do top_k sampling of 0.9
-        if sampling_keep_top_k == -2:
-            sampling_keep_top_k = int(logits.shape[-1].size * 0.1)
-
-        if sampling_keep_top_k != -1:
-            if sampling_keep_top_k <= 0:
-                raise ValueError("sampling_keep_top_k must either be -1 or positive.")
-            k_largest = mtf.nth_largest_element(
-                logits, n=sampling_keep_top_k,
-                reduced_dim=model.dimensions['final_vocab_dim'])
-            logits = mtf.where(mtf.less_equal(logits, k_largest),
-                               mtf.ones_like(logits) * -1e6, logits)
-
-        # temperature sampling
-        ids_this_step = mtf.sample_with_temperature(
-            logits, model.dimensions['final_vocab_dim'], temperature)
-        # reshape & assign results
-        ids_this_step = mtf.reshape(ids_this_step, ([batch_dims]))
-        one_hot = mtf.one_hot(position, image_seq_dim, dtype=tf.int32)
-        one_new_id = ids_this_step * one_hot
-        new_ids = (1 - one_hot) * ids + one_new_id
-        new_position = position + 1
-        ret = [new_position, new_ids]
+        ret = sample_step(logits, ids, position)
         ret += context.new_states
         return ret
 
@@ -176,11 +174,4 @@ def sample_autoregressive(inputs,
     final_position, outputs = mtf.while_loop(
         cond_fn, body_fn, while_loop_inputs)[:2]
     del final_position
-    # if has_partial_sequences and remove_partial_sequences:
-    #     # Remove partial sequences from outputs
-    #     partial_length = mtf.reduce_sum(
-    #         mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
-    #         reduced_dim=image_seq_dim)
-    #     outputs = mtf.dynamic_shift(
-    #         outputs, -partial_length, image_seq_dim, wrap=False)
     return outputs
