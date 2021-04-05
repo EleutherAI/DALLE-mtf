@@ -50,9 +50,7 @@ def sample_autoregressive(inputs,
     text_inputs = inputs['text_inputs']
 
     # Gets position (in image inputs) where zero padding starts
-    initial_position = mtf.reduce_sum(
-        mtf.to_int32(mtf.not_equal(image_inputs, padding_id)),
-        reduced_dim=image_seq_dim)
+    initial_position = mtf.zeros(text_inputs.mesh, mtf.Shape((batch_dims,)), dtype=tf.int32)
 
     if min_start_pos is not None:
         # force the sampling to never start below a minimum starting position, say the text length.
