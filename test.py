@@ -11,6 +11,7 @@ from mesh_tensorflow import placement_mesh_impl
 
 from src.dalle_mtf.models import DALLE
 from src.dalle_mtf.sample import sample_autoregressive
+from src.model_fns import get_tf_logits_mask
 
 # helper functions
 
@@ -35,6 +36,10 @@ def test_model():
         n_heads = 2,
         bf_16 = False
     )
+
+    tf_logits_mask = get_tf_logits_mask(model.text_vocab_size, model.total_tokens, 
+                                        model.text_seq_len, model.image_seq_len)
+    model.set_logits_mask(tf_logits_mask)
 
     batch_dim = model.dimensions["batch_dim"]
     sequence_dim = model.dimensions["total_seq_dim"]
@@ -67,6 +72,10 @@ def test_sampling():
         n_heads = 2,
         bf_16 = False
     )
+
+    tf_logits_mask = get_tf_logits_mask(model.text_vocab_size, model.total_tokens, 
+                                        model.text_seq_len, model.image_seq_len)
+    model.set_logits_mask(tf_logits_mask)
 
     batch_dim = model.dimensions["batch_dim"]
     sequence_dim = model.dimensions["total_seq_dim"]
