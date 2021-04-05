@@ -56,7 +56,7 @@ def test_sampling():
 
     model = DALLE(
         batch_size = 1,
-        text_seq_len = 1,
+        text_seq_len = 3,
         image_seq_len = 4,
         n_embd = 16,
         n_heads = 2,
@@ -82,3 +82,4 @@ def test_sampling():
         mesh_impl = placement_mesh_impl.PlacementMeshImpl(shape=[], layout={}, devices=[""])
         lowering = mtf.Lowering(graph, {mesh: mesh_impl})
         samples = lowering.export_to_tf_tensor(samples)
+        print(samples)
