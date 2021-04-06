@@ -1,5 +1,7 @@
+import imageio
+import numpy as np
 import tensorflow.compat.v1 as tf
-
+import os
 
 def crop_center_and_resize(img, size):
     s = tf.shape(img)
@@ -36,6 +38,32 @@ def truncate_or_pad_label(label, params):
     label = tf.gather(label, tf.range(params["text_seq_len"]))
     label = tf.reshape(label, [params["text_seq_len"]])
     return label
+
+
+def pred_input(params, tokenizer, prompt='a cat in a hat'):
+    tokens = tokenizer.encode(prompt)
+    if len(tokens) > params["text_seq_len"]:
+        tf.logging.info("The length of your input prompt is longer than the model's text context length - truncating "
+                        "input.")
+        tokens = tokens[len(tokens) - params["text_seq_len"]:]  # TODO: left or right truncate here?
+    if len(tokens) < params["text_seq_len"]:
+        tokens = tf.pad(tokens, [[0, params["text_seq_len"] - len(tokens)]], constant_values=params["padding_id"])
+    t = tf.broadcast_to(tokens, [params["batch_size"], params["text_seq_len"]])
+    dataset = tf.data.Dataset.from_tensors(t)
+
+    def _dummy_labels(x):
+        return x, x
+
+    dataset = dataset.map(_dummy_labels)
+    return dataset
+
+
+def pred_output(predictions, out_name='test', output_dir='outputs'):
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+    for i, p in enumerate(predictions):
+        denormalize = lambda x: (((x + 1) / 2) * 255.0).astype(np.uint8)
+        imageio.imwrite(f"outputs/{out_name}_{i}.jpeg", denormalize(p["predictions_decoded"]))
 
 
 def read_labeled_tfrecord(params):
@@ -103,6 +131,7 @@ def vae_input_fn(params, eval=False):
         dataset = configure_for_performance(dataset, params, eval)
         return dataset.repeat()
 
+
 def dalle_input_fn(params, eval=False):
     path = params["dataset"]["train_path"] if not eval else params["dataset"]["eval_path"]
     files = tf.io.gfile.glob(path)
@@ -113,7 +142,8 @@ def dalle_input_fn(params, eval=False):
 
     if not eval:
         dataset = dataset.shuffle(file_count, reshuffle_each_iteration=False)
-    dataset = dataset.apply(tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
+    dataset = dataset.apply(
+        tf.data.experimental.parallel_interleave(tf.data.TFRecordDataset, cycle_length=4, sloppy=False))
     parse_fn = read_labeled_tfrecord(params)
     dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = configure_for_performance(dataset, params, eval)

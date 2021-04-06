@@ -1,9 +1,8 @@
 import tensorflow.compat.v1 as tf
 import tensorflow.compat.v2 as tf2
 from tensorflow.python.tpu import tpu_estimator
-from .optimizers import get_optimizer
 from .vae_tf import DiscreteVAE
-from .utils import scalar_summary, mode_to_str, create_host_call
+from .utils import mode_to_str
 
 
 def vae_model_fn(features, labels, mode, params):

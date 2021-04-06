@@ -80,3 +80,21 @@ def get_variable_dtype(bf_16=True):
         return mtf.VariableDType(master_dtype=tf.bfloat16, slice_dtype=tf.float32, activation_dtype=tf.bfloat16)
     else:
         return mtf.VariableDType(master_dtype=tf.float32, slice_dtype=tf.float32, activation_dtype=tf.float32)
+
+def expand_tile(value, newdim, axis=0):
+    """Add a new axis of given size."""
+    new_shape = value.shape.dims
+    new_shape.insert(axis, newdim)
+    return mtf.broadcast(value, new_shape)  # shape.dims gets us a list which we need in order to concat
+
+def mask_to_bias(visible, dtype):
+  """Convert a boolean visibility mask to an attention bias.
+  The returned Tensor has large negative values in positions where
+  visible=False.
+  Args:
+    visible: a boolean Tensor
+    dtype: a dtype
+  Returns:
+    a Tensor with the given dtype and the same shape as "visible"
+  """
+  return mtf.cast(mtf.logical_not(visible), dtype) * -1e9
