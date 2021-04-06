@@ -397,7 +397,8 @@ class DALLE:
             wpe = (axial_wpe_1 + axial_wpe_2) / 2
 
             wpe = mtf.reshape(wpe, [axial_dim, embd_dim])
-            wpe = pad(wpe, [self.text_seq_len, 0], axial_dim.name)
+            wpe = pad(wpe, [self.text_seq_len + 1, 0], axial_dim.name)
+            wpe = mtf.slice(wpe, 0, self.total_seq_len, axial_dim.name)
             wpe = mtf.replace_dimensions(wpe, wpe.shape[0], self.dimensions["embed_seq_dim"])
             return wpe
 

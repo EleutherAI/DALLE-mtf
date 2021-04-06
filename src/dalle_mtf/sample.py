@@ -10,8 +10,7 @@ def sample_autoregressive(inputs,
                           padding_id = 0,
                           variable_dtype=mtf.VariableDType(tf.float32),
                           sampling_keep_top_k=-1,
-                          cached=True,
-                          min_start_pos=None
+                          cached=True
                           ):
     """Sample randomly one token at a time.
 
@@ -51,11 +50,6 @@ def sample_autoregressive(inputs,
 
     # Gets position (in image inputs) where zero padding starts
     initial_position = mtf.zeros(text_inputs.mesh, mtf.Shape((batch_dims,)), dtype=tf.int32)
-
-    if min_start_pos is not None:
-        # force the sampling to never start below a minimum starting position, say the text length.
-        # this will also be useful for image completion, where you can start sampling from half the image tokens
-        initial_position = mtf.maximum(initial_position, min_start_pos)
 
     # initial_position += model.dimensions['text_seq_dim'].size
 
