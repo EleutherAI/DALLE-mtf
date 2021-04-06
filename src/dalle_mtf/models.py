@@ -165,7 +165,8 @@ class DALLE:
                            "text_sequence_dim": mtf.Dimension("sequence_dim", text_seq_len),
                            "image_sequence_dim": mtf.Dimension("sequence_dim", image_seq_len),
                            "total_seq_dim": mtf.Dimension("sequence_dim", self.total_seq_len),
-                           "embed_seq_dim": mtf.Dimension("embed_seq_dim", self.total_seq_len),
+                           "text_embed_seq_dim": mtf.Dimension("text_embed_seq_dim", text_seq_len),
+                           "image_embed_seq_dim": mtf.Dimension("image_embed_seq_dim", image_seq_len),
                            "memory_len_dim": mtf.Dimension("memory_len_dim", self.total_seq_len),
                            "heads_dim": mtf.Dimension("heads", n_heads),
                            "kv_dim": mtf.Dimension("kv_dim", n_embd // n_heads),
@@ -208,15 +209,56 @@ class DALLE:
                 x = mtf.dropout(x, rate=embed_dropout, name="wte_dropout")
         return x
 
-    def positional_embedding(self, x, name):
-        if "text" in name:
-            sequence_dim = self.dimensions["text_sequence_dim"]
-        else:
-            sequence_dim = self.dimensions["image_sequence_dim"]
-        with tf.variable_scope(name):
+    def axial_positional_embedding(self, mesh):
+        with tf.variable_scope("axial_emb"):
+            axial_dim_side = int(sqrt(self.image_seq_len))
+
+            embd_dim = self.dimensions["embed_dim"]
+            axial_dim = mtf.Dimension("axial_dim", self.image_seq_len)
+
+            dim_axials = [mtf.Dimension(f"axial_dim_{i}", t) for i, t in enumerate((axial_dim_side, axial_dim_side))]
+
+            axial_wpe_1 = mtf.get_variable(mesh, "axial_wpe_1", mtf.Shape([dim_axials[0], embd_dim]),
+                                           initializer=tf.random_normal_initializer(stddev=0.01),
+                                           master_dtype=self.variable_dtype.master_dtype,
+                                           slice_dtype=self.variable_dtype.slice_dtype,
+                                           activation_dtype=self.variable_dtype.activation_dtype)
+
+            axial_wpe_2 = mtf.get_variable(mesh, "axial_wpe_2", mtf.Shape([dim_axials[1], embd_dim]),
+                                           initializer=tf.random_normal_initializer(stddev=0.01),
+                                           master_dtype=self.variable_dtype.master_dtype,
+                                           slice_dtype=self.variable_dtype.slice_dtype,
+                                           activation_dtype=self.variable_dtype.activation_dtype)
+
+            axial_wpe_1, axial_wpe_2 = map(lambda t: mtf.broadcast(t, [dim_axials[0], dim_axials[1], embd_dim]),
+                                           (axial_wpe_1, axial_wpe_2))
+            wpe = (axial_wpe_1 + axial_wpe_2) / 2
+
+            wpe = mtf.reshape(wpe, [axial_dim, embd_dim])
+
+            wpe = mtf.replace_dimensions(wpe, wpe.shape[0], self.dimensions["image_embed_seq_dim"])
+            return wpe
+
+    def image_positional_embedding(self, x):
+        sequence_dim = self.dimensions["image_sequence_dim"]
+        with tf.variable_scope("image_pos_emb"):
+            # Positional embedding
+            wpe = self.axial_positional_embedding(x.mesh)
+            position_indices = mtf.range(x.mesh, sequence_dim, tf.int64) if not \
+                self.is_incremental_inference else (self.context.position - 1)
+            pos_emb = mtf.gather(wpe, position_indices, wpe.shape[0])
+            embed_dropout = self.params.get("embed_dropout", 0)
+            if embed_dropout > 0 and self.mode == "train":
+                pos_emb = mtf.dropout(pos_emb, rate=embed_dropout, name="wte_dropout")
+            x += pos_emb
+            return x
+
+    def text_positional_embedding(self, x):
+        sequence_dim = self.dimensions["text_sequence_dim"]
+        with tf.variable_scope("text_pos_emb"):
             # Positional embedding
             wpe = mtf.get_variable(x.mesh, "wpe",
-                                   mtf.Shape([self.dimensions["embed_seq_dim"], self.dimensions["embed_dim"]]),
+                                   mtf.Shape([self.dimensions["text_embed_seq_dim"], self.dimensions["embed_dim"]]),
                                    initializer=tf.random_normal_initializer(stddev=0.01),
                                    master_dtype=self.variable_dtype.master_dtype,
                                    slice_dtype=self.variable_dtype.slice_dtype,
@@ -414,18 +456,18 @@ class DALLE:
     def forward(self, features, return_loss=True, return_logits=False):
         if features.get('text_inputs') is not None:
             text = features["text_inputs"]
-            text_emb = self.positional_embedding(self.embedding(text, "text_embd"), "text_pos_emb")
+            text_emb = self.text_positional_embedding(self.embedding(text, "text_embd"))
         else:
             assert self.is_incremental_inference
         image = features.get("image_inputs", None)
         if not self.is_incremental_inference:
-            image_emb = self.positional_embedding(self.embedding(image, "image_embd"), "image_pos_emb")
+            image_emb = self.image_positional_embedding(self.embedding(image, "image_embd"))
             tokens = mtf.concat([text_emb, image_emb], concat_dim_name="sequence_dim")  # [batch, seq, n_embd]
         else:
             # reshape inputs if in inference mode
             image = mtf.gather(image, self.context.position - 1, self.dimensions["image_sequence_dim"])
             image = mtf.reshape(image, [self.dimensions["batch_dim"]])
-            tokens = self.positional_embedding(self.embedding(image, "image_embd"), "image_pos_emb")
+            tokens = self.image_positional_embedding(self.embedding(image, "image_embd"))
 
         mask = self.get_attn_mask(tokens.mesh, self.dimensions["total_seq_dim"], self.dimensions["memory_len_dim"])
         out = self.transformer(tokens, mask=mask)

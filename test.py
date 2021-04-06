@@ -32,6 +32,7 @@ def test_model():
     model = DALLE(
         mesh = mesh,
         batch_size = 1,
+        image_seq_len = 4,
         n_embd = 16,
         n_heads = 2,
         bf_16 = False
