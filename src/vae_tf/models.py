@@ -75,6 +75,8 @@ class DiscreteVAE:
         self.recompute_grad = recompute_grad
         self.bf16 = use_bf16
 
+        self.n_hid = convblocks[-1][1]
+
         assert math.log2(stack_factor).is_integer() # maybe you don't actually need this?
         self.stack_factor = stack_factor
 
@@ -109,7 +111,6 @@ class DiscreteVAE:
                                 x = x + res_out
 
         with tf.variable_scope(f"codebook"):
-            self.n_hid = x.shape[-1]
             embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
 
             if self.bf16:
@@ -119,9 +120,8 @@ class DiscreteVAE:
 
             return output
 
-
     def decoder(self, x):
-        with tf.variable_scope(f"codebook", reuse=True):
+        with tf.variable_scope(f"codebook", reuse=tf.AUTO_REUSE):
             embedding = tf.get_variable("codebook", shape=[self.n_hid, self.num_tokens], dtype=tf.float32)
 
             x = tf.matmul(x, embedding, transpose_b=True)
@@ -161,6 +161,22 @@ class DiscreteVAE:
                 x = tf.depth_to_space(x, self.stack_factor)
 
             return x
+
+    def decode(self, input_indices):
+        batch, seqlen = input_indices.shape
+
+        print(f"seqlen {seqlen}")
+        print(f"side expected {self.W // (2 ** len(self.convblocks))}")
+
+        assert seqlen == (self.W // (2 ** len(self.convblocks))) * (self.H // (2 ** len(self.convblocks)))
+
+        input_onehot = tf.one_hot(input_indices, self.num_tokens)
+        input_reshaped = tf.reshape(input_onehot, [batch,
+                                                   self.H // (2 ** len(self.convblocks)),
+                                                   self.W // (2 ** len(self.convblocks)),
+                                                   self.num_tokens])  # NHWC
+
+        return self.decoder(input_reshaped)
 
     def forward(self, features, return_recon_loss=False, return_logits=False, hard_gumbel=True, temperature=1.):
         if isinstance(features, dict):

@@ -28,6 +28,7 @@ def main():
     args = parse_args()
     logging = setup_logging(args)
     params = fetch_model_params(args.model)
+    save_config(params, params['model_dir'])
     assert params["model_type"].lower() == "vae", f'model_type {params["model_type"]} not recognized'
 
     # get current step
